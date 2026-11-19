@@ -1,0 +1,13 @@
+{
+  "name": "HarvestSim.Visualization.Editor",
+  "references": [
+    "HarvestSim.Visualization",
+    "Unity.TextMeshPro",
+    "UnityEngine.UI",
+    "Unity.InputSystem",
+    "Unity.RenderPipelines.Universal.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ]
+}
