@@ -1,12 +1,28 @@
 {
-  "name": "HarvestSim.Visualization.PlayModeTests",
-  "references": [
-    "HarvestSim.Visualization",
-    "Unity.TextMeshPro",
-    "UnityEngine.UI"
-  ],
-  "optionalUnityReferences": [
-    "TestAssemblies"
-  ],
-  "includePlatforms": []
+    "name": "HarvestSim.Visualization.PlayModeTests",
+    "rootNamespace": "",
+    "references": [
+        "HarvestSim.Visualization",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [
+        "LinuxStandalone64",
+        "LinuxStandalone64Server",
+        "CloudRendering"
+    ],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
 }
