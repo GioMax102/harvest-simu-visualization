@@ -1,0 +1,12 @@
+{
+  "name": "HarvestSim.Visualization.PlayModeTests",
+  "references": [
+    "HarvestSim.Visualization",
+    "Unity.TextMeshPro",
+    "UnityEngine.UI"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "includePlatforms": []
+}

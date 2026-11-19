@@ -1,0 +1,7 @@
+{
+  "name": "HarvestSim.Visualization",
+  "references": [
+    "Unity.TextMeshPro",
+    "UnityEngine.UI"
+  ]
+}

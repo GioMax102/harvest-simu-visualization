@@ -1,0 +1,17 @@
+{
+  "name": "HarvestSim.Visualization.Tests",
+  "references": [
+    "HarvestSim.Visualization"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll",
+    "Newtonsoft.Json.dll"
+  ]
+}
