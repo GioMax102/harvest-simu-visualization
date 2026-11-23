@@ -63,6 +63,7 @@ namespace HarvestSim.Visualization
                 seedInput.contentType = TMP_InputField.ContentType.IntegerNumber;
                 seedInput.text = "0";
                 foreach (var text in field.GetComponentsInChildren<TMP_Text>(true)) text.font = header.font;
+                if (seedInput.placeholder is TMP_Text placeholder) placeholder.text = "Semilla";
                 simulateButton = Instantiate(playButton, parent);
                 simulateButton.name = "Simular";
                 simulateButton.onClick.RemoveAllListeners();
@@ -73,6 +74,15 @@ namespace HarvestSim.Visualization
                 topButton = Instantiate(playButton, parent);
                 topButton.name = "Cenital";
                 topButton.GetComponentInChildren<TMP_Text>().text = "Vista cenital";
+                var title = Instantiate(header, parent); title.text = "SERVIDOR / SIMULACIÓN"; title.fontSize = 18;
+                var scenarioLabel = Instantiate(header, parent); scenarioLabel.text = "Escenario"; scenarioLabel.fontSize = 16;
+                var strategyLabel = Instantiate(header, parent); strategyLabel.text = "Estrategia"; strategyLabel.fontSize = 16;
+                var seedLabel = Instantiate(header, parent); seedLabel.text = "Semilla"; seedLabel.fontSize = 16;
+                int position = speedDropdown.transform.GetSiblingIndex() - 1;
+                foreach (var element in new Transform[] { title.transform, scenarioLabel.transform, scenarioDropdown.transform,
+                             strategyLabel.transform, strategyDropdown.transform, seedLabel.transform, seedInput.transform,
+                             simulateButton.transform, perspectiveButton.transform, topButton.transform })
+                    element.SetSiblingIndex(position++);
             }
             simulateButton.onClick.RemoveAllListeners();
             simulateButton.onClick.AddListener(client.Simulate);
