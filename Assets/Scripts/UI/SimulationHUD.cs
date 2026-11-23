@@ -12,6 +12,10 @@ namespace HarvestSim.Visualization
         public TMP_Text header, agentsText, worldText, eventsText, metricsText, errorText, playLabel;
         public Button playButton, backButton, forwardButton, restartButton, endButton;
         public TMP_Dropdown speedDropdown;
+        public TMP_Dropdown scenarioDropdown, strategyDropdown;
+        public TMP_InputField seedInput;
+        public Button simulateButton;
+        public Button perspectiveButton, topButton;
         PlaybackController controller;
         readonly float[] speeds = { 1, 4, 8, 16 };
         public void Bind(PlaybackController value)
@@ -37,6 +41,54 @@ namespace HarvestSim.Visualization
         }
         void OnDestroy() => Unbind();
         void ChangeSpeed(int index) => controller.SetSpeed(speeds[index]);
+        public void BindClient(TraceClient client)
+        {
+            if (!scenarioDropdown)
+            {
+                var parent = speedDropdown.transform.parent;
+                scenarioDropdown = Instantiate(speedDropdown, parent);
+                scenarioDropdown.name = "Escenario";
+                scenarioDropdown.onValueChanged.RemoveAllListeners();
+                scenarioDropdown.ClearOptions();
+                scenarioDropdown.AddOptions(new System.Collections.Generic.List<string> { "escenario_a" });
+                strategyDropdown = Instantiate(speedDropdown, parent);
+                strategyDropdown.name = "Estrategia";
+                strategyDropdown.onValueChanged.RemoveAllListeners();
+                strategyDropdown.ClearOptions();
+                strategyDropdown.AddOptions(new System.Collections.Generic.List<string> { "base", "subasta", "anticipada", "anticipada_plus" });
+                var field = TMP_DefaultControls.CreateInputField(new TMP_DefaultControls.Resources());
+                field.name = "Seed"; field.transform.SetParent(parent, false);
+                field.AddComponent<LayoutElement>().minHeight = 40;
+                seedInput = field.GetComponent<TMP_InputField>();
+                seedInput.contentType = TMP_InputField.ContentType.IntegerNumber;
+                seedInput.text = "0";
+                foreach (var text in field.GetComponentsInChildren<TMP_Text>(true)) text.font = header.font;
+                simulateButton = Instantiate(playButton, parent);
+                simulateButton.name = "Simular";
+                simulateButton.onClick.RemoveAllListeners();
+                simulateButton.GetComponentInChildren<TMP_Text>().text = "Simular";
+                perspectiveButton = Instantiate(playButton, parent);
+                perspectiveButton.name = "Perspectiva";
+                perspectiveButton.GetComponentInChildren<TMP_Text>().text = "Perspectiva 3D";
+                topButton = Instantiate(playButton, parent);
+                topButton.name = "Cenital";
+                topButton.GetComponentInChildren<TMP_Text>().text = "Vista cenital";
+            }
+            simulateButton.onClick.RemoveAllListeners();
+            simulateButton.onClick.AddListener(client.Simulate);
+            perspectiveButton.onClick.RemoveAllListeners();
+            perspectiveButton.onClick.AddListener(controller.worldView.SetPerspective);
+            topButton.onClick.RemoveAllListeners();
+            topButton.onClick.AddListener(controller.worldView.ResetCamera);
+        }
+        public void SetScenarios(System.Collections.Generic.List<string> names)
+        {
+            scenarioDropdown.ClearOptions(); scenarioDropdown.AddOptions(names);
+        }
+        public void ShowStatus(string message)
+        {
+            errorText.gameObject.SetActive(true); errorText.text = message;
+        }
         public void Render(TraceData trace, PlaybackState state, bool paused, float speed)
         {
             header.text = $"HARVEST / {trace.Scenario}\nTick {state.Tick} / {trace.TotalTicks} · {(paused ? "Pausa" : "Reproduciendo")} · {speed:g} ticks/s";
@@ -52,6 +104,14 @@ namespace HarvestSim.Visualization
             {
                 var s = state.Agents[a.Id];
                 agents.AppendLine($"{a.Id} ({a.Type})\n{s.Status}\nCarga {s.Load}/{a.Capacity} · ({s.X},{s.Y}) {s.Orientation}\n");
+                if (s.Fuel.HasValue)
+                {
+                    var tank = trace.Json["config"]?["combustible"]?[a.Type == "carro" ? "tanque_carro" : "tanque_cosechadora"];
+                    float capacity = tank == null ? 0 : (float)tank;
+                    int filled = capacity <= 0 ? 0 : Mathf.Clamp(Mathf.RoundToInt(10 * s.Fuel.Value / capacity), 0, 10);
+                    agents.AppendLine($"Combustible {s.Fuel.Value:0.##} L " +
+                                      (capacity > 0 ? $"[{new string('|', filled)}{new string('.', 10 - filled)}] {capacity:0.##} L" : "") + "\n");
+                }
             }
             agentsText.text = agents.ToString();
             int field = trace.Width * (trace.Height - 1) - ((Newtonsoft.Json.Linq.JArray)trace.World["obstaculos"]).Count;

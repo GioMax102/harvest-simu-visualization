@@ -9,8 +9,10 @@ namespace HarvestSim.Visualization
         public WorldView worldView;
         public SimulationHUD hud;
         public float initialSpeed = 8;
+        public string serverUrl = "http://127.0.0.1:8000";
         public TraceData Trace { get; private set; }
         public TracePlayback Playback { get; private set; }
+        TracePlayback preview;
         public bool Paused { get; private set; } = true;
         public float Speed { get; private set; } = 8;
         double accumulated;
@@ -20,28 +22,36 @@ namespace HarvestSim.Visualization
         {
             if (hud) hud.Bind(this);
             LoadTrace(initialTrace);
+            if (!TryGetComponent<TraceClient>(out _))
+            {
+                var client = gameObject.AddComponent<TraceClient>();
+                client.controller = this; client.baseUrl = serverUrl;
+            }
         }
         public void LoadTrace(TextAsset asset)
+            => LoadTraceJson(asset ? asset.text : null, asset ? asset.name : "trace");
+
+        public void LoadTraceJson(string json, string label = "trace")
         {
-            Paused = true; accumulated = 0; Playback = null; Trace = null;
+            Paused = true; accumulated = 0; Playback = null; preview = null; Trace = null;
             if (worldView) worldView.Clear();
             try
             {
                 if (!hud || !worldView) throw new InvalidOperationException("PlaybackController: asigna HUD y WorldView.");
                 hud.Bind(this);
-                if (!asset) throw new InvalidOperationException("Asigna un trace.json al campo Initial Trace del SimulationRoot.");
-                var data = TraceLoader.Parse(asset.text);
+                if (string.IsNullOrEmpty(json)) throw new InvalidOperationException("Asigna un trace.json al campo Initial Trace del SimulationRoot.");
+                var data = TraceLoader.Parse(json);
                 var playback = new TracePlayback(data);
                 worldView.Build(data);
-                Trace = data; Playback = playback;
+                Trace = data; Playback = playback; preview = new TracePlayback(data);
                 SetSpeed(initialSpeed);
                 hud.ClearError(); RefreshView();
             }
             catch (Exception e)
             {
-                Playback = null; Trace = null;
+                Playback = null; preview = null; Trace = null;
                 if (worldView) worldView.Clear();
-                string message = (asset ? asset.name : "trace") + ": " + e.Message;
+                string message = label + ": " + e.Message;
                 if (hud) hud.ShowError(message); else Debug.LogError(message, this);
             }
         }
@@ -86,6 +96,11 @@ namespace HarvestSim.Visualization
             { accumulated--; Playback.Step(1); changed = true; }
             if (Playback.State.Tick == Trace.TotalTicks) { Paused = true; accumulated = 0; }
             if (changed) RefreshView();
+            if (!Paused && Playback.State.Tick < Trace.TotalTicks)
+            {
+                preview.Seek(Playback.State.Tick + 1);
+                worldView.Interpolate(Playback.State, preview.State, (float)accumulated);
+            }
         }
         void RefreshView()
         {
