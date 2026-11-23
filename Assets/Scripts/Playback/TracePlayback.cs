@@ -33,10 +33,15 @@ namespace HarvestSim.Visualization
                     { agent.X = (int)pose["x"]; agent.Y = (int)pose["y"]; agent.Orientation = (string)pose["orientacion"]; }
                     if (set["estado"] != null) agent.Status = (string)set["estado"];
                     if (set["carga"] != null) agent.Load = (int)set["carga"];
+                    if (set["combustible"] != null) agent.Fuel = (float)set["combustible"];
                     break;
                 case "CELDA_COSECHADA": State.Harvested.Add(((int)e["celda"][0], (int)e["celda"][1])); break;
                 case "DEPOSITO": State.Delivered = (int)e["entregado_total"]; break;
-                case "MENSAJE_ENVIADO": State.Messages.Add((int)e["id"], e); break;
+                case "MENSAJE_ENVIADO":
+                    State.Messages.Add((int)e["id"], e);
+                    if ((string)e["tipo_mensaje"] == "ACEPTACION") State.Winners[(string)e["de"]] = (string)e["a"];
+                    if ((string)e["tipo_mensaje"] == "TRANSFERENCIA_TERMINADA") State.Winners.Remove((string)e["de"]);
+                    break;
                 case "MENSAJE_ENTREGADO": State.Messages.Remove((int)e["id"]); break;
             }
         }

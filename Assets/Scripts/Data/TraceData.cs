@@ -28,6 +28,7 @@ namespace HarvestSim.Visualization
     {
         public int X, Y, Load;
         public string Orientation, Status;
+        public float? Fuel;
     }
 
     public sealed class PlaybackState
@@ -37,6 +38,7 @@ namespace HarvestSim.Visualization
         public readonly Dictionary<string, AgentState> Agents = new();
         public readonly HashSet<(int x, int y)> Harvested = new();
         public readonly Dictionary<int, JObject> Messages = new();
+        public readonly Dictionary<string, string> Winners = new();
         public JArray Events = new();
     }
 }
