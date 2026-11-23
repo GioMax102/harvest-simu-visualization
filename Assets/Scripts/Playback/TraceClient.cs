@@ -12,13 +12,37 @@ namespace HarvestSim.Visualization
         public string baseUrl = "http://127.0.0.1:8000";
         public PlaybackController controller;
         bool busy;
+        bool serverHealthy;
 
         IEnumerator Start()
         {
             if (!controller) controller = GetComponent<PlaybackController>();
             if (!controller || !controller.hud) yield break;
             controller.hud.BindClient(this);
-            yield return GetScenarios();
+            yield return CheckHealth();
+            if (serverHealthy) yield return GetScenarios();
+        }
+
+        IEnumerator CheckHealth()
+        {
+            using var request = UnityWebRequest.Get(baseUrl.TrimEnd('/') + "/api/salud");
+            request.timeout = 5;
+            yield return request.SendWebRequest();
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                controller.hud.ShowStatus("Servidor no disponible; trace local cargado. " + request.error);
+                yield break;
+            }
+            try
+            {
+                var health = JObject.Parse(request.downloadHandler.text);
+                serverHealthy = (string)health["estado"] == "ok" && (string)health["schema_version"] == "2.2";
+                if (!serverHealthy) controller.hud.ShowStatus("El servidor no ofrece el contrato trace 2.2; trace local cargado.");
+            }
+            catch (Exception error)
+            {
+                controller.hud.ShowStatus("No se pudo leer la salud del servidor: " + error.Message);
+            }
         }
 
         IEnumerator GetScenarios()
