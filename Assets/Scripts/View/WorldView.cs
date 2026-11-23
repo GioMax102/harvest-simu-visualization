@@ -15,7 +15,7 @@ namespace HarvestSim.Visualization
         public Material cropMaterial, harvestedMaterial, serviceMaterial, structureMaterial, obstacleMaterial;
         readonly Dictionary<(int x, int y), Renderer> cells = new();
         readonly Dictionary<string, AgentView> agents = new();
-        readonly Dictionary<string, LineRenderer> lines = new();
+        readonly Dictionary<(string from, string to), LineRenderer> lines = new();
         TraceData trace;
         Material lineMaterial;
         int maxYield;
@@ -114,7 +114,7 @@ namespace HarvestSim.Visualization
         void ShowLine(string from, string to, Color color)
         {
             if (!lineMaterial || !agents.ContainsKey(from) || !agents.ContainsKey(to)) return;
-            string key = from + ":" + to;
+            var key = (from, to);
             if (!lines.TryGetValue(key, out var line))
             {
                 var go = new GameObject("Coordinacion_" + key);
@@ -142,9 +142,8 @@ namespace HarvestSim.Visualization
             foreach (var pair in lines)
             {
                 if (!pair.Value.gameObject.activeSelf) continue;
-                var ids = pair.Key.Split(':');
-                pair.Value.SetPosition(0, agents[ids[0]].transform.position + Vector3.up * .45f);
-                pair.Value.SetPosition(1, agents[ids[1]].transform.position + Vector3.up * .45f);
+                pair.Value.SetPosition(0, agents[pair.Key.from].transform.position + Vector3.up * .45f);
+                pair.Value.SetPosition(1, agents[pair.Key.to].transform.position + Vector3.up * .45f);
             }
         }
         public void SetPerspective() { perspective = true; FrameCamera(mapCamera); }

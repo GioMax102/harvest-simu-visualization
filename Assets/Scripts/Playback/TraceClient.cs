@@ -19,8 +19,28 @@ namespace HarvestSim.Visualization
             if (!controller) controller = GetComponent<PlaybackController>();
             if (!controller || !controller.hud) yield break;
             controller.hud.BindClient(this);
+            yield return RefreshScenariosRoutine();
+        }
+
+        public void RefreshScenarios()
+        {
+            if (!busy) StartCoroutine(RefreshScenariosRoutine());
+        }
+
+        IEnumerator RefreshScenariosRoutine()
+        {
+            SetBusy(true);
+            serverHealthy = false;
             yield return CheckHealth();
             if (serverHealthy) yield return GetScenarios();
+            SetBusy(false);
+        }
+
+        void SetBusy(bool value)
+        {
+            busy = value;
+            controller.hud.simulateButton.interactable = !value;
+            controller.hud.refreshScenariosButton.interactable = !value;
         }
 
         IEnumerator CheckHealth()
@@ -91,8 +111,7 @@ namespace HarvestSim.Visualization
 
         IEnumerator GetTrace(string scenario, string strategy, int seed)
         {
-            busy = true;
-            controller.hud.simulateButton.interactable = false;
+            SetBusy(true);
             string url = baseUrl.TrimEnd('/') + "/api/escenarios/" + Uri.EscapeDataString(scenario) +
                          "/trace?seed=" + seed + "&estrategia=" + Uri.EscapeDataString(strategy);
             using var request = UnityWebRequest.Get(url);
@@ -106,8 +125,7 @@ namespace HarvestSim.Visualization
                 controller.LoadTrace(controller.initialTrace);
                 controller.hud.ShowStatus("No se pudo simular " + scenario + ": " + error + ". Trace local cargado.");
             }
-            controller.hud.simulateButton.interactable = true;
-            busy = false;
+            SetBusy(false);
         }
     }
 }

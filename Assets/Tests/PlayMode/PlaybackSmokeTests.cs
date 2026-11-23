@@ -51,6 +51,47 @@ namespace HarvestSim.Tests
             Assert.That(controller.worldView.agentsRoot.childCount, Is.EqualTo(2));
             Object.Destroy(invalid);
         }
+
+        [UnityTest]
+        public IEnumerator LinesSupportAgentIdsContainingColon()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var original = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/Traces/trace_ejemplo.json");
+            var trace = new TextAsset(original.text.Replace("cosechadora_1", "cosechadora:1").Replace("carro_1", "carro:1"));
+            controller.LoadTrace(trace);
+            Assert.That(controller.Playback, Is.Not.Null);
+            var state = controller.Playback.State;
+            state.Winners.Add("cosechadora:1", "carro:1");
+            controller.worldView.Render(state);
+            Assert.That(controller.worldView.structuresRoot.GetComponentsInChildren<LineRenderer>().Length, Is.EqualTo(1));
+            Assert.DoesNotThrow(() => controller.worldView.Interpolate(state, state, .5f));
+            Object.Destroy(trace);
+        }
+
+        [UnityTest]
+        public IEnumerator ScenarioRefreshKeepsLocalTraceAfterServerFailure()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var client = controller.GetComponent<TraceClient>();
+            float deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.refreshScenariosButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+            client.baseUrl = "http://127.0.0.1:1";
+            controller.hud.refreshScenariosButton.onClick.Invoke();
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.False);
+            Assert.That(controller.hud.simulateButton.interactable, Is.False);
+            client.RefreshScenarios();
+            deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.refreshScenariosButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+            Assert.That(controller.hud.simulateButton.interactable, Is.True);
+            Assert.That(controller.hud.errorText.gameObject.activeSelf, Is.True);
+            Assert.That(controller.Playback, Is.Not.Null);
+        }
     }
 }
 

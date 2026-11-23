@@ -14,7 +14,7 @@ namespace HarvestSim.Visualization
         public TMP_Dropdown speedDropdown;
         public TMP_Dropdown scenarioDropdown, strategyDropdown;
         public TMP_InputField seedInput;
-        public Button simulateButton;
+        public Button simulateButton, refreshScenariosButton;
         public Button perspectiveButton, topButton;
         PlaybackController controller;
         readonly float[] speeds = { 1, 4, 8, 16 };
@@ -68,6 +68,9 @@ namespace HarvestSim.Visualization
                 simulateButton.name = "Simular";
                 simulateButton.onClick.RemoveAllListeners();
                 simulateButton.GetComponentInChildren<TMP_Text>().text = "Simular";
+                refreshScenariosButton = Instantiate(playButton, parent);
+                refreshScenariosButton.name = "ActualizarEscenarios";
+                refreshScenariosButton.GetComponentInChildren<TMP_Text>().text = "Actualizar escenarios";
                 perspectiveButton = Instantiate(playButton, parent);
                 perspectiveButton.name = "Perspectiva";
                 perspectiveButton.GetComponentInChildren<TMP_Text>().text = "Perspectiva 3D";
@@ -81,11 +84,13 @@ namespace HarvestSim.Visualization
                 int position = speedDropdown.transform.GetSiblingIndex() - 1;
                 foreach (var element in new Transform[] { title.transform, scenarioLabel.transform, scenarioDropdown.transform,
                              strategyLabel.transform, strategyDropdown.transform, seedLabel.transform, seedInput.transform,
-                             simulateButton.transform, perspectiveButton.transform, topButton.transform })
+                             simulateButton.transform, refreshScenariosButton.transform, perspectiveButton.transform, topButton.transform })
                     element.SetSiblingIndex(position++);
             }
             simulateButton.onClick.RemoveAllListeners();
             simulateButton.onClick.AddListener(client.Simulate);
+            refreshScenariosButton.onClick.RemoveAllListeners();
+            refreshScenariosButton.onClick.AddListener(client.RefreshScenarios);
             perspectiveButton.onClick.RemoveAllListeners();
             perspectiveButton.onClick.AddListener(controller.worldView.SetPerspective);
             topButton.onClick.RemoveAllListeners();
