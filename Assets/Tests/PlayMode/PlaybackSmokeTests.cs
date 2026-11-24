@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System.Collections;
 using HarvestSim.Visualization;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -80,6 +81,10 @@ namespace HarvestSim.Tests
             float deadline = Time.realtimeSinceStartup + 12;
             while (!controller.hud.refreshScenariosButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
             Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+            var remoteJson = JObject.Parse(controller.initialTrace.text);
+            remoteJson["meta"]["escenario"] = "escenario_remoto";
+            controller.LoadTraceJson(remoteJson.ToString(), "remoto");
+            Assert.That(controller.Trace.Scenario, Is.EqualTo("escenario_remoto"));
             client.baseUrl = "http://127.0.0.1:1";
             controller.hud.refreshScenariosButton.onClick.Invoke();
             Assert.That(controller.hud.refreshScenariosButton.interactable, Is.False);
@@ -91,6 +96,25 @@ namespace HarvestSim.Tests
             Assert.That(controller.hud.simulateButton.interactable, Is.True);
             Assert.That(controller.hud.errorText.gameObject.activeSelf, Is.True);
             Assert.That(controller.Playback, Is.Not.Null);
+            Assert.That(controller.Trace.Scenario, Is.EqualTo((string)JObject.Parse(controller.initialTrace.text)["meta"]["escenario"]));
+            Assert.That(controller.hud.errorText.text, Does.Contain("trace local cargado"));
+        }
+
+        [UnityTest]
+        public IEnumerator AgentDisplaysAllAlertsInSameTick()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var state = controller.Playback.State;
+            state.Events.Add(new JObject { ["tipo"] = "RECARGA", ["agente"] = "carro_1" });
+            state.Events.Add(new JObject { ["tipo"] = "RESTRICCION", ["agente"] = "carro_1", ["regla"] = "reserva" });
+            state.Events.Add(new JObject { ["tipo"] = "RESTRICCION", ["agente"] = "carro_1", ["regla"] = "pasillo" });
+            controller.worldView.Render(state);
+            var label = controller.worldView.agentsRoot.Find("carro_1/AgentLabel").GetComponent<TextMesh>();
+            Assert.That(label.text, Does.Contain("RECARGA"));
+            Assert.That(label.text, Does.Contain("RESTRICCION: reserva"));
+            Assert.That(label.text, Does.Contain("RESTRICCION: pasillo"));
         }
 
         [UnityTest]

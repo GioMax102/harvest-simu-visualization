@@ -43,6 +43,13 @@ namespace HarvestSim.Visualization
             controller.hud.refreshScenariosButton.interactable = !value;
         }
 
+        void LoadLocalAfterError(string message)
+        {
+            controller.LoadTrace(controller.initialTrace);
+            controller.hud.ShowStatus(message + (controller.Playback != null
+                ? "; trace local cargado." : "; no se pudo cargar el trace local."));
+        }
+
         static IEnumerator Request(string url, int timeout, Action<string, string> completed)
         {
             UnityWebRequest request = null;
@@ -74,18 +81,18 @@ namespace HarvestSim.Visualization
                 (response, error) => { body = response; requestError = error; });
             if (requestError != null)
             {
-                controller.hud.ShowStatus("Servidor no disponible; trace local cargado. " + requestError);
+                LoadLocalAfterError("Servidor no disponible: " + requestError);
                 yield break;
             }
             try
             {
                 var health = JObject.Parse(body);
                 serverHealthy = (string)health["estado"] == "ok" && (string)health["schema_version"] == "2.2";
-                if (!serverHealthy) controller.hud.ShowStatus("El servidor no ofrece el contrato trace 2.2; trace local cargado.");
+                if (!serverHealthy) LoadLocalAfterError("El servidor no ofrece el contrato trace 2.2");
             }
             catch (Exception error)
             {
-                controller.hud.ShowStatus("No se pudo leer la salud del servidor: " + error.Message);
+                LoadLocalAfterError("No se pudo leer la salud del servidor: " + error.Message);
             }
         }
 
@@ -96,7 +103,7 @@ namespace HarvestSim.Visualization
                 (response, error) => { body = response; requestError = error; });
             if (requestError != null)
             {
-                controller.hud.ShowStatus("Servidor no disponible; trace local cargado. " + requestError);
+                LoadLocalAfterError("Servidor no disponible: " + requestError);
                 yield break;
             }
             try
@@ -116,7 +123,7 @@ namespace HarvestSim.Visualization
             }
             catch (Exception error)
             {
-                controller.hud.ShowStatus("No se pudo leer la lista de escenarios: " + error.Message);
+                LoadLocalAfterError("No se pudo leer la lista de escenarios: " + error.Message);
             }
         }
 
@@ -144,8 +151,7 @@ namespace HarvestSim.Visualization
             if (requestError != null || controller.Playback == null)
             {
                 string error = requestError ?? "trace inválido";
-                controller.LoadTrace(controller.initialTrace);
-                controller.hud.ShowStatus("No se pudo simular " + scenario + ": " + error + ". Trace local cargado.");
+                LoadLocalAfterError("No se pudo simular " + scenario + ": " + error);
             }
             SetBusy(false);
         }

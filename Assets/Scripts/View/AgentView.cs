@@ -37,7 +37,7 @@ namespace HarvestSim.Visualization
             float angle = state.Orientation switch { "E" => 90, "S" => 180, "O" => 270, _ => 0 };
             transform.localRotation = Quaternion.Euler(0, angle, 0);
             if (label) label.transform.rotation = Quaternion.Euler(90, 0, 0);
-            restricted = alert != null && alert.StartsWith("RESTRICCION");
+            restricted = alert != null && alert.Contains("RESTRICCION:");
             if (label) label.text = agentId + (proposal == null ? "" : "\nOferta: " + proposal) + (alert == null ? "" : "\n" + alert);
         }
         public void Interpolate(AgentState from, AgentState to, Vector3 start, Vector3 end, float t)

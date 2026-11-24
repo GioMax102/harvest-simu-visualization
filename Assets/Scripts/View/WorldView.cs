@@ -91,8 +91,13 @@ namespace HarvestSim.Visualization
             foreach (JObject e in state.Events)
             {
                 string type = (string)e["tipo"];
-                if (type == "RECARGA") alerts[(string)e["agente"]] = "RECARGA";
-                if (type == "RESTRICCION") alerts[(string)e["agente"]] = "RESTRICCION: " + (string)e["regla"];
+                if (type == "RECARGA" || type == "RESTRICCION")
+                {
+                    string id = (string)e["agente"];
+                    string alert = type == "RECARGA" ? "RECARGA" : "RESTRICCION: " + (string)e["regla"];
+                    alerts.TryGetValue(id, out string previous);
+                    alerts[id] = previous == null ? alert : previous + "\n" + alert;
+                }
                 if (type == "MENSAJE_ENVIADO" && (string)e["tipo_mensaje"] == "PROPUESTA")
                     proposals[(string)e["de"]] = e["payload"]?["costo"]?.ToString();
             }
