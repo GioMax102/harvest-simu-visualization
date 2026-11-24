@@ -19,6 +19,36 @@ namespace HarvestSim.Tests
     public class PlaybackSmokeTests
     {
         [UnityTest]
+        public IEnumerator PerspectiveFramesFieldAtDifferentAspectRatiosAndEnablesShadows()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var world = controller.worldView;
+            var camera = world.mapCamera;
+            world.SetPerspective();
+            foreach (float aspect in new[] { .4f, 1f, 2f })
+            {
+                camera.aspect = aspect;
+                world.FrameCamera(camera);
+                foreach (int x in new[] { 0, controller.Trace.Width - 1 })
+                    foreach (int y in new[] { 0, controller.Trace.Height - 1 })
+                    {
+                        var point = camera.WorldToViewportPoint(world.CellToWorld(x, y, 0));
+                        Assert.That(point.z, Is.GreaterThan(0));
+                        Assert.That(point.x, Is.InRange(0f, 1f));
+                        Assert.That(point.y, Is.InRange(0f, 1f));
+                    }
+            }
+            var sun = Object.FindFirstObjectByType<Light>();
+            Assert.That(sun, Is.Not.Null);
+            Assert.That(sun.shadows, Is.Not.EqualTo(LightShadows.None));
+            camera.ResetAspect();
+            world.ResetCamera();
+            Assert.That(camera.orthographic, Is.True);
+        }
+
+        [UnityTest]
         public IEnumerator SceneReloadControlsAndClock()
         {
             const string scene = "Assets/Scenes/HarvestPlayback.unity";

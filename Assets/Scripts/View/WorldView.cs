@@ -22,6 +22,25 @@ namespace HarvestSim.Visualization
         bool perspective;
         float yaw = 35, pitch = 55, zoom = 1;
 
+        void Start()
+        {
+            Light sun = null;
+            foreach (var light in FindObjectsByType<Light>(FindObjectsSortMode.None))
+                if (light.type == LightType.Directional && light.enabled) { sun = light; break; }
+            if (!sun)
+            {
+                sun = new GameObject("Harvest sunlight").AddComponent<Light>();
+                sun.transform.SetParent(transform, false);
+                sun.type = LightType.Directional;
+                sun.transform.rotation = Quaternion.Euler(60, -30, 0);
+            }
+            if (sun.shadows == LightShadows.None)
+            {
+                sun.shadows = LightShadows.Soft;
+                sun.shadowStrength = .65f;
+            }
+        }
+
         public void Build(TraceData data)
         {
             if (!cellsRoot || !structuresRoot || !agentsRoot || !mapCamera || !cellPrefab || !harvesterPrefab || !cartPrefab ||
@@ -177,7 +196,12 @@ namespace HarvestSim.Visualization
             if (perspective)
             {
                 camera.fieldOfView = 60;
-                camera.transform.position = center + Quaternion.Euler(pitch, yaw, 0) * Vector3.back * Mathf.Max(trace.Width, trace.Height) * 1.8f * zoom;
+                float radius = new Vector2(trace.Width / 2f + .7f, trace.Height / 2f + .7f).magnitude;
+                float verticalHalfFov = camera.fieldOfView * Mathf.Deg2Rad / 2;
+                float horizontalHalfFov = Mathf.Atan(Mathf.Tan(verticalHalfFov) * Mathf.Max(.1f, camera.aspect));
+                float distance = radius / Mathf.Sin(Mathf.Min(verticalHalfFov, horizontalHalfFov)) * zoom;
+                camera.farClipPlane = Mathf.Max(camera.farClipPlane, distance + radius + 1);
+                camera.transform.position = center + Quaternion.Euler(pitch, yaw, 0) * Vector3.back * distance;
                 camera.transform.LookAt(center);
             }
             else
