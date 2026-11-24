@@ -12,11 +12,20 @@ namespace HarvestSim.Editor
     {
         static GameObject root;
         static WorldView preview;
+        static PlaybackController sourceController;
+        static TextAsset shownTrace;
+        static bool refreshQueued, frameOnRefresh;
 
         static HarvestScenePreview()
         {
-            EditorSceneManager.sceneOpened += (_, __) => QueueRefresh();
-            EditorSceneManager.sceneClosing += (_, __) => Clear();
+            EditorSceneManager.sceneOpened += (scene, _) =>
+            {
+                if (scene.path == HarvestSceneBuilder.ScenePath) QueueRefresh(true);
+            };
+            EditorSceneManager.sceneClosing += (scene, _) =>
+            {
+                if (scene.path == HarvestSceneBuilder.ScenePath) Clear();
+            };
             EditorApplication.playModeStateChanged += state =>
             {
                 if (state == PlayModeStateChange.ExitingEditMode) Clear();
@@ -24,20 +33,41 @@ namespace HarvestSim.Editor
             };
             AssemblyReloadEvents.beforeAssemblyReload += Clear;
             EditorApplication.quitting += Clear;
+            EditorApplication.update += RefreshChangedTrace;
             QueueRefresh();
         }
 
-        static void QueueRefresh() => EditorApplication.delayCall += RefreshOpenScene;
+        static void QueueRefresh(bool frame = false)
+        {
+            frameOnRefresh |= frame;
+            if (refreshQueued) return;
+            refreshQueued = true;
+            EditorApplication.delayCall += RefreshOpenScene;
+        }
+
+        static void RefreshChangedTrace()
+        {
+            if (sourceController && sourceController.initialTrace != shownTrace)
+                QueueRefresh();
+        }
 
         static void RefreshOpenScene()
         {
+            refreshQueued = false;
+            bool frame = frameOnRefresh;
+            frameOnRefresh = false;
             if (EditorApplication.isPlayingOrWillChangePlaymode) return;
             var scene = SceneManager.GetSceneByPath(HarvestSceneBuilder.ScenePath);
             if (!scene.IsValid() || !scene.isLoaded) { Clear(); return; }
             foreach (var gameObject in scene.GetRootGameObjects())
             {
                 var controller = gameObject.GetComponentInChildren<PlaybackController>(true);
-                if (controller) { Build(controller); return; }
+                if (controller)
+                {
+                    Build(controller);
+                    if (frame) FramePreview();
+                    return;
+                }
             }
             Clear();
         }
@@ -46,6 +76,8 @@ namespace HarvestSim.Editor
         public static void Build(PlaybackController controller)
         {
             Clear();
+            sourceController = controller;
+            shownTrace = controller ? controller.initialTrace : null;
             if (!controller || !controller.worldView || !controller.initialTrace) return;
             try
             {
@@ -78,8 +110,23 @@ namespace HarvestSim.Editor
             catch (Exception error)
             {
                 Clear();
+                sourceController = controller;
+                shownTrace = controller ? controller.initialTrace : null;
                 Debug.LogWarning("No se pudo generar la vista previa de Harvest: " + error.Message);
             }
+        }
+
+        [MenuItem("Harvest Sim/Enfocar vista previa")]
+        public static void FramePreview()
+        {
+            var view = SceneView.lastActiveSceneView;
+            if (!root || !view) return;
+            var renderers = root.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) return;
+            var bounds = renderers[0].bounds;
+            foreach (var renderer in renderers) bounds.Encapsulate(renderer.bounds);
+            view.Frame(bounds, true);
+            view.Repaint();
         }
 
         static Transform Child(string name)
@@ -95,6 +142,8 @@ namespace HarvestSim.Editor
             if (root) UnityEngine.Object.DestroyImmediate(root);
             preview = null;
             root = null;
+            sourceController = null;
+            shownTrace = null;
         }
     }
 }
