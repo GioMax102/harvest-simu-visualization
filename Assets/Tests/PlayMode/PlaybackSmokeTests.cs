@@ -1,5 +1,10 @@
 #if UNITY_EDITOR
 using System.Collections;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading.Tasks;
 using HarvestSim.Visualization;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
@@ -170,6 +175,68 @@ namespace HarvestSim.Tests
             Assert.That(controller.hud.simulateButton.interactable, Is.True);
             Assert.That(controller.hud.errorText.text, Does.Contain("No se pudo simular"));
             Assert.That(controller.Playback, Is.Not.Null);
+        }
+
+        [UnityTest]
+        public IEnumerator InvalidServerTracePreservesRemoteAndLocalErrors()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var client = controller.GetComponent<TraceClient>();
+            float deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.simulateButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.simulateButton.interactable, Is.True);
+
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            client.baseUrl = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port;
+            var responses = Task.Run(() =>
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    using var connection = listener.AcceptTcpClient();
+                    using var stream = connection.GetStream();
+                    using var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, true);
+                    while (!string.IsNullOrEmpty(reader.ReadLine())) { }
+                    byte[] body = Encoding.UTF8.GetBytes("{\"schema_version\":\"3\"}");
+                    byte[] headers = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
+                    stream.Write(headers, 0, headers.Length);
+                    stream.Write(body, 0, body.Length);
+                }
+            });
+            var original = controller.initialTrace;
+            var invalid = new TextAsset("{}");
+            try
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    if (i == 1) controller.initialTrace = invalid;
+                    client.Simulate();
+                    deadline = Time.realtimeSinceStartup + 12;
+                    while (!controller.hud.simulateButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+                    Assert.That(controller.hud.simulateButton.interactable, Is.True);
+                    Assert.That(controller.hud.errorText.text, Does.Contain("solo se admite 2.1 o 2.2"));
+                    if (i == 0)
+                    {
+                        Assert.That(controller.Playback, Is.Not.Null);
+                        Assert.That(controller.hud.errorText.text, Does.Contain("trace local cargado"));
+                    }
+                    else
+                    {
+                        Assert.That(controller.Playback, Is.Null);
+                        Assert.That(controller.hud.errorText.text, Does.Contain("no se pudo cargar el trace local"));
+                        Assert.That(controller.hud.errorText.text, Does.Contain("se requiere String"));
+                    }
+                }
+                Assert.That(responses.IsFaulted, Is.False);
+            }
+            finally
+            {
+                listener.Stop();
+                controller.initialTrace = original;
+                Object.Destroy(invalid);
+            }
         }
     }
 }

@@ -47,7 +47,7 @@ namespace HarvestSim.Visualization
         {
             controller.LoadTrace(controller.initialTrace);
             controller.hud.ShowStatus(message + (controller.Playback != null
-                ? "; trace local cargado." : "; no se pudo cargar el trace local."));
+                ? "; trace local cargado." : "; no se pudo cargar el trace local: " + controller.hud.errorText.text));
         }
 
         static IEnumerator Request(string url, int timeout, Action<string, string> completed)
@@ -150,7 +150,7 @@ namespace HarvestSim.Visualization
             if (requestError == null) controller.LoadTraceJson(body, scenario);
             if (requestError != null || controller.Playback == null)
             {
-                string error = requestError ?? "trace inválido";
+                string error = requestError ?? controller.hud.errorText.text;
                 LoadLocalAfterError("No se pudo simular " + scenario + ": " + error);
             }
             SetBusy(false);
