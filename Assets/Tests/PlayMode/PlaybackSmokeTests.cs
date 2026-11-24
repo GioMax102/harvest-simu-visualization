@@ -118,6 +118,30 @@ namespace HarvestSim.Tests
         }
 
         [UnityTest]
+        public IEnumerator AdjacentAgentLabelsStaySeparateAndOffTheirBodies()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            controller.LoadTrace(AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/Traces/trace_ejemplo.json"));
+            yield return null;
+            var cart = controller.worldView.agentsRoot.Find("carro_1");
+            var harvester = controller.worldView.agentsRoot.Find("cosechadora_1");
+            var cartLabel = cart.Find("AgentLabel").GetComponent<TextMesh>();
+            var harvesterLabel = harvester.Find("AgentLabel").GetComponent<TextMesh>();
+            Assert.That(cartLabel.text, Is.EqualTo("carro_1"));
+            Assert.That(harvesterLabel.text, Is.EqualTo("cosechadora_1"));
+            Assert.That(cartLabel.GetComponent<Renderer>().bounds.max.x,
+                Is.LessThan(harvesterLabel.GetComponent<Renderer>().bounds.min.x));
+            foreach (var agent in new[] { cart, harvester })
+                Assert.That(agent.Find("AgentLabel").GetComponent<Renderer>().bounds.min.z,
+                    Is.GreaterThan(agent.Find("Body").GetComponent<Renderer>().bounds.max.z));
+            controller.worldView.Interpolate(controller.Playback.State, controller.Playback.State, .5f);
+            Assert.That(cartLabel.transform.position.z - cart.position.z, Is.EqualTo(.38f).Within(.001f));
+            Assert.That(harvesterLabel.transform.position.z - harvester.position.z, Is.EqualTo(.38f).Within(.001f));
+        }
+
+        [UnityTest]
         public IEnumerator InvalidServerUrlDoesNotLockControls()
         {
             yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
