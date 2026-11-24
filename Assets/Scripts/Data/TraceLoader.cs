@@ -174,7 +174,8 @@ namespace HarvestSim.Visualization
                             Agent(e, "agente", agents);
                             var cell = Cell(e["celda"], width, height);
                             Require(cell.y > 0 && !obstacles.Contains(cell) && harvested.Add(cell), e.Path, "celda no cosechable o repetida");
-                            if (version == "2.2") Integer(e, "cantidad", 1);
+                            // 2.2: cantidad es opcional (si falta, vale el rendimiento de la celda o grano_por_celda)
+                            if (version == "2.2" && e["cantidad"] != null) Integer(e, "cantidad", 1);
                             break;
                         case "DEPOSITO":
                             Agent(e, "agente", agents); Integer(e, "cantidad"); Integer(e, "entregado_total"); break;
