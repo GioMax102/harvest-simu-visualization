@@ -92,6 +92,37 @@ namespace HarvestSim.Tests
             Assert.That(controller.hud.errorText.gameObject.activeSelf, Is.True);
             Assert.That(controller.Playback, Is.Not.Null);
         }
+
+        [UnityTest]
+        public IEnumerator InvalidServerUrlDoesNotLockControls()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var client = controller.GetComponent<TraceClient>();
+            float deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.refreshScenariosButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+
+            client.baseUrl = "http://[invalid";
+            client.RefreshScenarios();
+            yield return null;
+            deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.refreshScenariosButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+            Assert.That(controller.hud.simulateButton.interactable, Is.True);
+            Assert.That(controller.hud.errorText.gameObject.activeSelf, Is.True);
+            Assert.That(controller.Playback, Is.Not.Null);
+
+            client.Simulate();
+            yield return null;
+            deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.simulateButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+            Assert.That(controller.hud.simulateButton.interactable, Is.True);
+            Assert.That(controller.hud.errorText.text, Does.Contain("No se pudo simular"));
+            Assert.That(controller.Playback, Is.Not.Null);
+        }
     }
 }
 

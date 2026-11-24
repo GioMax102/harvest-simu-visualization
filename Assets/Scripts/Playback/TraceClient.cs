@@ -43,19 +43,43 @@ namespace HarvestSim.Visualization
             controller.hud.refreshScenariosButton.interactable = !value;
         }
 
+        static IEnumerator Request(string url, int timeout, Action<string, string> completed)
+        {
+            UnityWebRequest request = null;
+            UnityWebRequestAsyncOperation operation = null;
+            string error = null;
+            try
+            {
+                request = UnityWebRequest.Get(url);
+                request.timeout = timeout;
+                operation = request.SendWebRequest();
+            }
+            catch (Exception exception) { error = exception.Message; }
+            using (request)
+            {
+                if (error == null)
+                {
+                    yield return operation;
+                    if (request.result != UnityWebRequest.Result.Success) error = request.error ?? "Error de conexión";
+                }
+                string body = error == null ? request.downloadHandler.text : null;
+                completed(body, error);
+            }
+        }
+
         IEnumerator CheckHealth()
         {
-            using var request = UnityWebRequest.Get(baseUrl.TrimEnd('/') + "/api/salud");
-            request.timeout = 5;
-            yield return request.SendWebRequest();
-            if (request.result != UnityWebRequest.Result.Success)
+            string body = null, requestError = null;
+            yield return Request((baseUrl ?? "").TrimEnd('/') + "/api/salud", 5,
+                (response, error) => { body = response; requestError = error; });
+            if (requestError != null)
             {
-                controller.hud.ShowStatus("Servidor no disponible; trace local cargado. " + request.error);
+                controller.hud.ShowStatus("Servidor no disponible; trace local cargado. " + requestError);
                 yield break;
             }
             try
             {
-                var health = JObject.Parse(request.downloadHandler.text);
+                var health = JObject.Parse(body);
                 serverHealthy = (string)health["estado"] == "ok" && (string)health["schema_version"] == "2.2";
                 if (!serverHealthy) controller.hud.ShowStatus("El servidor no ofrece el contrato trace 2.2; trace local cargado.");
             }
@@ -67,17 +91,17 @@ namespace HarvestSim.Visualization
 
         IEnumerator GetScenarios()
         {
-            using var request = UnityWebRequest.Get(baseUrl.TrimEnd('/') + "/api/escenarios");
-            request.timeout = 5;
-            yield return request.SendWebRequest();
-            if (request.result != UnityWebRequest.Result.Success)
+            string body = null, requestError = null;
+            yield return Request((baseUrl ?? "").TrimEnd('/') + "/api/escenarios", 5,
+                (response, error) => { body = response; requestError = error; });
+            if (requestError != null)
             {
-                controller.hud.ShowStatus("Servidor no disponible; trace local cargado. " + request.error);
+                controller.hud.ShowStatus("Servidor no disponible; trace local cargado. " + requestError);
                 yield break;
             }
             try
             {
-                JToken response = JToken.Parse(request.downloadHandler.text);
+                JToken response = JToken.Parse(body);
                 var entries = response is JArray array ? array : response["escenarios"] as JArray;
                 if (entries == null) throw new FormatException("lista de escenarios inválida");
                 var names = new List<string>();
@@ -112,16 +136,14 @@ namespace HarvestSim.Visualization
         IEnumerator GetTrace(string scenario, string strategy, int seed)
         {
             SetBusy(true);
-            string url = baseUrl.TrimEnd('/') + "/api/escenarios/" + Uri.EscapeDataString(scenario) +
+            string url = (baseUrl ?? "").TrimEnd('/') + "/api/escenarios/" + Uri.EscapeDataString(scenario) +
                          "/trace?seed=" + seed + "&estrategia=" + Uri.EscapeDataString(strategy);
-            using var request = UnityWebRequest.Get(url);
-            request.timeout = 30;
-            yield return request.SendWebRequest();
-            if (request.result == UnityWebRequest.Result.Success)
-                controller.LoadTraceJson(request.downloadHandler.text, scenario);
-            if (request.result != UnityWebRequest.Result.Success || controller.Playback == null)
+            string body = null, requestError = null;
+            yield return Request(url, 30, (response, error) => { body = response; requestError = error; });
+            if (requestError == null) controller.LoadTraceJson(body, scenario);
+            if (requestError != null || controller.Playback == null)
             {
-                string error = request.result == UnityWebRequest.Result.Success ? "trace inválido" : request.error;
+                string error = requestError ?? "trace inválido";
                 controller.LoadTrace(controller.initialTrace);
                 controller.hud.ShowStatus("No se pudo simular " + scenario + ": " + error + ". Trace local cargado.");
             }
