@@ -9,6 +9,11 @@ namespace HarvestSim.Visualization
 {
     public sealed class SimulationHUD : MonoBehaviour
     {
+        public const string LegendText = "LEYENDA\nCosechadora: cabezal · Carro: tractor y remolque\n" +
+            "B: bodega · Discos: bases\nAmarillo: cultivo · Beige: cosechado\n" +
+            "Gris azulado: servicio · Gris oscuro: obstáculo\n\n" +
+            "CÁMARA\nPerspectiva 3D: arrastra con clic derecho para girar\n" +
+            "Rueda: acercar o alejar · Vista cenital: restablecer";
         public TMP_Text header, agentsText, worldText, eventsText, metricsText, errorText, playLabel;
         public Button playButton, backButton, forwardButton, restartButton, endButton;
         public TMP_Dropdown speedDropdown;
@@ -21,6 +26,8 @@ namespace HarvestSim.Visualization
         public void Bind(PlaybackController value)
         {
             Unbind(); controller = value;
+            var legend = speedDropdown.transform.parent.Find("Legend");
+            if (legend && legend.TryGetComponent<TMP_Text>(out var text)) text.text = LegendText;
             playButton.onClick.AddListener(controller.PlayPause);
             backButton.onClick.AddListener(controller.StepBackward);
             forwardButton.onClick.AddListener(controller.StepForward);

@@ -60,6 +60,7 @@ namespace HarvestSim.Editor
             world.mapCamera = camera;
             var light = new GameObject("Directional Light").AddComponent<Light>();
             light.type = LightType.Directional; light.intensity = 1;
+            light.shadows = LightShadows.Soft; light.shadowStrength = .65f;
             light.transform.rotation = Quaternion.Euler(60, -30, 0);
             var hud = BuildHUD();
             new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
@@ -185,7 +186,7 @@ namespace HarvestSim.Editor
             hud.speedDropdown = speed.GetComponent<TMP_Dropdown>();
             hud.speedDropdown.ClearOptions(); hud.speedDropdown.AddOptions(new System.Collections.Generic.List<string> { "1", "4", "8", "16" });
             foreach (var text in speed.GetComponentsInChildren<TMP_Text>(true)) { text.font = font; text.fontSize = 20; text.richText = false; }
-            Text("Legend", content, "LEYENDA\nCubo verde: cosechadora · Círculo azul: carro\nBlanco: frente · B: bodega · Discos: bases\nAmarillo: cultivo · Beige: cosechado\nGris azulado: servicio · Gris oscuro: obstáculo", 17);
+            Text("Legend", content, SimulationHUD.LegendText, 17);
             hud.worldText = Text("World", content, "");
             hud.agentsText = Text("Agents", content, "");
             hud.eventsText = Text("Events", content, "", 16);
