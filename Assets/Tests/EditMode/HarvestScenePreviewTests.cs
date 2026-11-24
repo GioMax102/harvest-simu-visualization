@@ -65,11 +65,11 @@ namespace HarvestSim.Tests
             var otherScene = default(Scene);
             try
             {
-                yield return null;
                 HarvestScenePreview.Build(controller);
                 var first = Preview();
                 Assert.That(first, Is.Not.Null);
                 int firstId = first.GetInstanceID();
+                yield return null;
                 yield return null;
                 Assert.That(Preview().GetInstanceID(), Is.EqualTo(firstId), "No debe reconstruir sin cambios.");
 
@@ -78,13 +78,18 @@ namespace HarvestSim.Tests
                 controller.initialTrace = original == example ? scenario : example;
                 Assert.That(controller.initialTrace, Is.Not.Null);
                 Assert.That(controller.initialTrace, Is.Not.EqualTo(original));
-                yield return null;
-                yield return null;
+                double deadline = EditorApplication.timeSinceStartup + 5;
+                while (Preview().GetInstanceID() == firstId && EditorApplication.timeSinceStartup < deadline)
+                    yield return null;
                 Assert.That(Preview().GetInstanceID(), Is.Not.EqualTo(firstId));
                 Assert.That(Preview().cellsRoot.childCount, Is.EqualTo(controller.initialTrace == example ? 12 : 56));
                 int changedId = Preview().GetInstanceID();
-                yield return null;
-                Assert.That(Preview().GetInstanceID(), Is.EqualTo(changedId), "El nuevo trace debe reconstruirse solo una vez.");
+                deadline = EditorApplication.timeSinceStartup + .25;
+                while (EditorApplication.timeSinceStartup < deadline)
+                {
+                    yield return null;
+                    Assert.That(Preview().GetInstanceID(), Is.EqualTo(changedId), "El nuevo trace debe reconstruirse solo una vez.");
+                }
 
                 otherScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
                 EditorSceneManager.CloseScene(otherScene, true);

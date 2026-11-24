@@ -64,7 +64,8 @@ namespace HarvestSim.Editor
                 var controller = gameObject.GetComponentInChildren<PlaybackController>(true);
                 if (controller)
                 {
-                    Build(controller);
+                    if (!root || sourceController != controller || shownTrace != controller.initialTrace)
+                        Build(controller);
                     if (frame) FramePreview();
                     return;
                 }
