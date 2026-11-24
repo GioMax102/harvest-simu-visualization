@@ -1,6 +1,12 @@
 #if UNITY_EDITOR
 using System.Collections;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading.Tasks;
 using HarvestSim.Visualization;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -50,6 +56,187 @@ namespace HarvestSim.Tests
             controller.LoadTrace(asset); yield return null;
             Assert.That(controller.worldView.agentsRoot.childCount, Is.EqualTo(2));
             Object.Destroy(invalid);
+        }
+
+        [UnityTest]
+        public IEnumerator LinesSupportAgentIdsContainingColon()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var original = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/Traces/trace_ejemplo.json");
+            var trace = new TextAsset(original.text.Replace("cosechadora_1", "cosechadora:1").Replace("carro_1", "carro:1"));
+            controller.LoadTrace(trace);
+            Assert.That(controller.Playback, Is.Not.Null);
+            var state = controller.Playback.State;
+            state.Winners.Add("cosechadora:1", "carro:1");
+            controller.worldView.Render(state);
+            Assert.That(controller.worldView.structuresRoot.GetComponentsInChildren<LineRenderer>().Length, Is.EqualTo(1));
+            Assert.DoesNotThrow(() => controller.worldView.Interpolate(state, state, .5f));
+            Object.Destroy(trace);
+        }
+
+        [UnityTest]
+        public IEnumerator ScenarioRefreshKeepsLocalTraceAfterServerFailure()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var client = controller.GetComponent<TraceClient>();
+            float deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.refreshScenariosButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+            var remoteJson = JObject.Parse(controller.initialTrace.text);
+            remoteJson["meta"]["escenario"] = "escenario_remoto";
+            controller.LoadTraceJson(remoteJson.ToString(), "remoto");
+            Assert.That(controller.Trace.Scenario, Is.EqualTo("escenario_remoto"));
+            client.baseUrl = "http://127.0.0.1:1";
+            controller.hud.refreshScenariosButton.onClick.Invoke();
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.False);
+            Assert.That(controller.hud.simulateButton.interactable, Is.False);
+            client.RefreshScenarios();
+            deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.refreshScenariosButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+            Assert.That(controller.hud.simulateButton.interactable, Is.True);
+            Assert.That(controller.hud.errorText.gameObject.activeSelf, Is.True);
+            Assert.That(controller.Playback, Is.Not.Null);
+            Assert.That(controller.Trace.Scenario, Is.EqualTo((string)JObject.Parse(controller.initialTrace.text)["meta"]["escenario"]));
+            Assert.That(controller.hud.errorText.text, Does.Contain("trace local cargado"));
+        }
+
+        [UnityTest]
+        public IEnumerator AgentDisplaysAllAlertsInSameTick()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var state = controller.Playback.State;
+            state.Events.Add(new JObject { ["tipo"] = "RECARGA", ["agente"] = "carro_1" });
+            state.Events.Add(new JObject { ["tipo"] = "RESTRICCION", ["agente"] = "carro_1", ["regla"] = "reserva" });
+            state.Events.Add(new JObject { ["tipo"] = "RESTRICCION", ["agente"] = "carro_1", ["regla"] = "pasillo" });
+            controller.worldView.Render(state);
+            var label = controller.worldView.agentsRoot.Find("carro_1/AgentLabel").GetComponent<TextMesh>();
+            Assert.That(label.text, Does.Contain("RECARGA"));
+            Assert.That(label.text, Does.Contain("RESTRICCION: reserva"));
+            Assert.That(label.text, Does.Contain("RESTRICCION: pasillo"));
+        }
+
+        [UnityTest]
+        public IEnumerator AdjacentAgentLabelsStaySeparateAndOffTheirBodies()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            controller.LoadTrace(AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/Traces/trace_ejemplo.json"));
+            yield return null;
+            var cart = controller.worldView.agentsRoot.Find("carro_1");
+            var harvester = controller.worldView.agentsRoot.Find("cosechadora_1");
+            var cartLabel = cart.Find("AgentLabel").GetComponent<TextMesh>();
+            var harvesterLabel = harvester.Find("AgentLabel").GetComponent<TextMesh>();
+            Assert.That(cartLabel.text, Is.EqualTo("carro_1"));
+            Assert.That(harvesterLabel.text, Is.EqualTo("cosechadora_1"));
+            Assert.That(cartLabel.GetComponent<Renderer>().bounds.max.x,
+                Is.LessThan(harvesterLabel.GetComponent<Renderer>().bounds.min.x));
+            foreach (var agent in new[] { cart, harvester })
+                Assert.That(agent.Find("AgentLabel").GetComponent<Renderer>().bounds.min.z,
+                    Is.GreaterThan(agent.Find("Body").GetComponent<Renderer>().bounds.max.z));
+            controller.worldView.Interpolate(controller.Playback.State, controller.Playback.State, .5f);
+            Assert.That(cartLabel.transform.position.z - cart.position.z, Is.EqualTo(.38f).Within(.001f));
+            Assert.That(harvesterLabel.transform.position.z - harvester.position.z, Is.EqualTo(.38f).Within(.001f));
+        }
+
+        [UnityTest]
+        public IEnumerator InvalidServerUrlDoesNotLockControls()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var client = controller.GetComponent<TraceClient>();
+            float deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.refreshScenariosButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+
+            client.baseUrl = "http://[invalid";
+            client.RefreshScenarios();
+            yield return null;
+            deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.refreshScenariosButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+            Assert.That(controller.hud.simulateButton.interactable, Is.True);
+            Assert.That(controller.hud.errorText.gameObject.activeSelf, Is.True);
+            Assert.That(controller.Playback, Is.Not.Null);
+
+            client.Simulate();
+            yield return null;
+            deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.simulateButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.refreshScenariosButton.interactable, Is.True);
+            Assert.That(controller.hud.simulateButton.interactable, Is.True);
+            Assert.That(controller.hud.errorText.text, Does.Contain("No se pudo simular"));
+            Assert.That(controller.Playback, Is.Not.Null);
+        }
+
+        [UnityTest]
+        public IEnumerator InvalidServerTracePreservesRemoteAndLocalErrors()
+        {
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+            var controller = Object.FindFirstObjectByType<PlaybackController>();
+            var client = controller.GetComponent<TraceClient>();
+            float deadline = Time.realtimeSinceStartup + 12;
+            while (!controller.hud.simulateButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(controller.hud.simulateButton.interactable, Is.True);
+
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            client.baseUrl = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port;
+            var responses = Task.Run(() =>
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    using var connection = listener.AcceptTcpClient();
+                    using var stream = connection.GetStream();
+                    using var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, true);
+                    while (!string.IsNullOrEmpty(reader.ReadLine())) { }
+                    byte[] body = Encoding.UTF8.GetBytes("{\"schema_version\":\"3\"}");
+                    byte[] headers = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
+                    stream.Write(headers, 0, headers.Length);
+                    stream.Write(body, 0, body.Length);
+                }
+            });
+            var original = controller.initialTrace;
+            var invalid = new TextAsset("{}");
+            try
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    if (i == 1) controller.initialTrace = invalid;
+                    client.Simulate();
+                    deadline = Time.realtimeSinceStartup + 12;
+                    while (!controller.hud.simulateButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
+                    Assert.That(controller.hud.simulateButton.interactable, Is.True);
+                    Assert.That(controller.hud.errorText.text, Does.Contain("solo se admite 2.1 o 2.2"));
+                    if (i == 0)
+                    {
+                        Assert.That(controller.Playback, Is.Not.Null);
+                        Assert.That(controller.hud.errorText.text, Does.Contain("trace local cargado"));
+                    }
+                    else
+                    {
+                        Assert.That(controller.Playback, Is.Null);
+                        Assert.That(controller.hud.errorText.text, Does.Contain("no se pudo cargar el trace local"));
+                        Assert.That(controller.hud.errorText.text, Does.Contain("se requiere String"));
+                    }
+                }
+                Assert.That(responses.IsFaulted, Is.False);
+            }
+            finally
+            {
+                listener.Stop();
+                controller.initialTrace = original;
+                Object.Destroy(invalid);
+            }
         }
     }
 }

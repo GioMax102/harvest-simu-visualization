@@ -49,6 +49,15 @@ namespace HarvestSim.Visualization
             Require(!string.IsNullOrWhiteSpace((string)token), token.Path, "texto vacío");
             return (string)token;
         }
+        static double Number(JToken parent, string name)
+        {
+            var token = (parent as JObject)?[name];
+            Require(token != null && (token.Type == JTokenType.Integer || token.Type == JTokenType.Float),
+                    parent?.Path + "." + name, "se requiere número");
+            double value = (double)token;
+            Require(!double.IsNaN(value) && !double.IsInfinity(value) && value >= 0, token.Path, "número no negativo requerido");
+            return value;
+        }
         static (int x, int y) Cell(JToken token, int width, int height)
         {
             Require(token is JArray a && a.Count == 2, token?.Path ?? "celda", "se requiere [x,y]");
@@ -68,7 +77,8 @@ namespace HarvestSim.Visualization
         public static void Validate(TraceData trace)
         {
             var root = trace.Json;
-            Require(Text(root, "schema_version") == "2.1", "schema_version", "solo se admite 2.1");
+            string version = Text(root, "schema_version");
+            Require(version == "2.1" || version == "2.2", "schema_version", "solo se admite 2.1 o 2.2");
             var meta = Field(root, "meta", JTokenType.Object);
             Text(meta, "escenario");
             int total = Integer(meta, "total_ticks");
@@ -85,6 +95,23 @@ namespace HarvestSim.Visualization
             {
                 var cell = Cell(token, width, height);
                 Require(cell.y > 0 && obstacles.Add(cell), token.Path, "obstáculo repetido o en servicio");
+            }
+            if (world["rendimiento"] != null)
+            {
+                var rows = (JArray)Field(world, "rendimiento", JTokenType.Array);
+                Require(rows.Count == height, rows.Path, "alto de rendimiento distinto al mapa");
+                for (int y = 0; y < height; y++)
+                {
+                    Require(rows[y] is JArray row && row.Count == width, rows[y].Path, "ancho de rendimiento distinto al mapa");
+                    for (int x = 0; x < width; x++)
+                    {
+                        var value = rows[y][x];
+                        long n = 0;
+                        Require(value.Type == JTokenType.Integer && long.TryParse(value.ToString(), out n) && n >= 0,
+                                value.Path, "rendimiento entero no negativo requerido");
+                        Require((y > 0 && !obstacles.Contains((x, y))) || n == 0, value.Path, "rendimiento fuera del campo");
+                    }
+                }
             }
             var agents = new Dictionary<string, int>();
             var agentTypes = new Dictionary<string, string>();
@@ -133,6 +160,7 @@ namespace HarvestSim.Visualization
                                 Require(new[] { "N", "E", "S", "O" }.Contains(Text(p, "orientacion")), p.Path, "orientación desconocida");
                             }
                             if (set["carga"] != null) Integer(set, "carga", 0, agents[id]);
+                            if (set["combustible"] != null) Number(set, "combustible");
                             if (set["estado"] != null)
                             {
                                 string status = Text(set, "estado");
@@ -146,17 +174,32 @@ namespace HarvestSim.Visualization
                             Agent(e, "agente", agents);
                             var cell = Cell(e["celda"], width, height);
                             Require(cell.y > 0 && !obstacles.Contains(cell) && harvested.Add(cell), e.Path, "celda no cosechable o repetida");
+                            // 2.2: cantidad es opcional (si falta, vale el rendimiento de la celda o grano_por_celda)
+                            if (version == "2.2" && e["cantidad"] != null) Integer(e, "cantidad", 1);
                             break;
                         case "DEPOSITO":
                             Agent(e, "agente", agents); Integer(e, "cantidad"); Integer(e, "entregado_total"); break;
                         case "BLOQUEO": Agent(e, "agente", agents); break;
+                        case "RECARGA":
+                            Require(version == "2.2", e.Path, "RECARGA requiere trace 2.2");
+                            Agent(e, "agente", agents); Number(e, "cantidad"); Number(e, "nivel"); break;
+                        case "RESTRICCION":
+                            Require(version == "2.2", e.Path, "RESTRICCION requiere trace 2.2");
+                            Agent(e, "agente", agents); Text(e, "regla"); Text(e, "detalle"); break;
                         case "MENSAJE_ENVIADO":
                             int message = Integer(e, "id");
                             Require(sent.Add(message), e.Path, "id de mensaje repetido");
                             Agent(e, "de", agents); pending.Add(message, Agent(e, "a", agents));
                             string messageType = Text(e, "tipo_mensaje"), act = Text(e, "performativa");
-                            Require((messageType == "LLENA" && act == "request") || (messageType == "TRANSFERENCIA_TERMINADA" && act == "inform"), e.Path, "mensaje/performativa no soportados");
-                            Field(e, "payload", JTokenType.Object); Integer(e, "entrega_en", tick);
+                            var acts = new Dictionary<string, string> {
+                                { "LLENA", "request" }, { "TRANSFERENCIA_TERMINADA", "inform" },
+                                { "SOLICITUD_SERVICIO", "cfp" }, { "PROPUESTA", "propose" },
+                                { "RECHAZO", "refuse" }, { "ACEPTACION", "accept-proposal" },
+                                { "RECHAZO_PROPUESTA", "reject-proposal" } };
+                            Require(acts.TryGetValue(messageType, out string expectedAct) && act == expectedAct &&
+                                    (version == "2.2" || messageType == "LLENA" || messageType == "TRANSFERENCIA_TERMINADA"),
+                                    e.Path, "mensaje/performativa no soportados");
+                            Field(e, "payload", JTokenType.Object); Integer(e, "entrega_en", tick + 1);
                             break;
                         case "MENSAJE_ENTREGADO":
                             int delivered = Integer(e, "id");

@@ -2,6 +2,7 @@
   "name": "HarvestSim.Visualization",
   "references": [
     "Unity.TextMeshPro",
-    "UnityEngine.UI"
+    "UnityEngine.UI",
+    "Unity.InputSystem"
   ]
 }

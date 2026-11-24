@@ -1,6 +1,15 @@
 # harvest-simu-visualization
 
-Cliente Unity de `trace.json` 2.1 generado por [harvest_sim](https://github.com/JoelMEsc/harvest_sim). Reproduce la corrida; no ejecuta rutas, decisiones de agentes ni física de cosecha.
+Cliente Unity de `trace.json` 2.1 y 2.2 generado por [harvest_sim](https://github.com/JoelMEsc/harvest_sim). Reproduce la corrida; no ejecuta rutas, decisiones de agentes ni física de cosecha.
+
+## Segunda entrega: servidor y coordinación
+
+1. En `harvest_sim`, instala las dependencias del proyecto y arranca `uvicorn harvest_sim.servidor:app`. El servidor debe responder en `http://127.0.0.1:8000/api/salud` y exponer `/api/escenarios` y `/api/escenarios/{nombre}/trace?seed=&estrategia=`.
+2. Abre `Assets/Scenes/HarvestPlayback.unity` con Unity 6000.3.7f1 y pulsa **Play**. El cliente consulta los escenarios del servidor. Selecciona escenario y estrategia (`base`, `subasta`, `anticipada` o `anticipada_plus`), escribe una semilla entera no negativa y pulsa **Simular**.
+3. Si el servidor falla, el HUD muestra el error y reproduce el trace local asignado a **Initial Trace**. La URL se puede cambiar en **Server Url** del `PlaybackController` en `SimulationRoot`; el valor por defecto es `http://127.0.0.1:8000`.
+4. En perspectiva 3D, arrastra con el botón derecho sobre el mapa para orbitar y usa la rueda para acercar o alejar. **Vista cenital** restablece la cámara. El movimiento se interpola entre ticks; carga, estado, cosecha y mensajes cambian solo al avanzar un tick.
+
+El trace 2.2 muestra varios agentes con id y color propio, rendimiento del campo, combustible, recargas, restricciones, llamadas a la subasta, costos de las propuestas y la línea del carro aceptado. Esa línea se mantiene hasta `TRANSFERENCIA_TERMINADA`; el cliente no calcula el ganador.
 
 ## Abrir el MVP
 
@@ -16,7 +25,7 @@ Si falta la fuente, usa **Window > TextMeshPro > Import TMP Essential Resources*
 
 ## Qué está implementado
 
-- Lectura y validación del contrato 2.1, incluidos ids, tipos, coordenadas, capacidades y ticks.
+- Lectura y validación de los contratos 2.1 y 2.2, incluidos ids, tipos, coordenadas, capacidades y ticks.
 - Aplicación de cambios parciales sin perder valores anteriores; carga explícita 0, ticks vacíos y retroceso desde el inicio.
 - Cosecha, depósito acumulado, eventos del tick y mensajes enviados/entregados.
 - Reloj independiente de FPS, pausa, pasos, reinicio, final y velocidades 1/4/8/16 ticks/s.
@@ -34,7 +43,7 @@ Si falta la fuente, usa **Window > TextMeshPro > Import TMP Essential Resources*
 | `Assets/Data/Traces` | Fixture sintético y escenarios reales A/B/C |
 | `Assets/Tests` | Pruebas de contrato, comparación con Python y smoke test de escena |
 
-Las colecciones de `PlaybackState` pertenecen al reproductor: las vistas deben tratarlas como solo lectura. El trace cargado tampoco se modifica. El movimiento salta exactamente de celda a celda por tick; la interpolación estética queda pendiente.
+Las colecciones de `PlaybackState` pertenecen al reproductor: las vistas deben tratarlas como solo lectura. El trace cargado tampoco se modifica. La interpolación de posición y giro es solo visual; el estado lógico cambia al avanzar de tick.
 
 ## Verificación y límites
 
@@ -43,7 +52,9 @@ Verificado el 19 de noviembre de 2026:
 - Los cuatro traces pasan el validador Python, incluidos sus checksums.
 - **20 casos NUnit de datos pasaron ejecutados con Mono fuera del Editor**. Comparan todos los campos de **642 estados** reconstruidos por Python, además de retrocesos, reinicio y entradas inválidas.
 - Los scripts de runtime, Editor y pruebas compilan con Roslyn y las bibliotecas de Unity 6000.3.7f1; se comprobó con la DLL del paquete oficial Newtonsoft 3.2.2. La compilación externa emitió un aviso de compatibilidad de referencias netstandard 2.0/2.1; no es una ejecución dentro de Unity.
-- **Pendiente:** importación real, generación de escena, Test Runner dentro de Unity y revisión visual. El intento de abrir Unity en batch terminó con `No valid Unity Editor license found. Please activate your license.` No se generaron todavía los archivos `.unity`, `.prefab` y `.mat`; los genera el comando del paso 3.
+- **Pendiente en esa verificación:** Test Runner dentro de Unity y revisión visual. Unity en batch informó `No valid Unity Editor license found. Please activate your license.`
+
+Actualización de la segunda entrega: el lector de datos pasó **22 comprobaciones** con Mono, incluidas trazas 2.2 sintéticas; los scripts de runtime compilan con las bibliotecas de Unity. Unity en batch volvió a informar el 23 de noviembre que no hay licencia válida. Falta ejecutar el Test Runner y revisar cámara, panel y cliente HTTP en el Editor. Los traces reales D/E/F y el servidor dependen de la integración del equipo en `harvest_sim`.
 
 Para comprobar desde Unity, primero genera la escena y después abre **Window > General > Test Runner**. Ejecuta **EditMode > Run All** y **PlayMode > Run All**. La prueba PlayMode abre HarvestPlayback y comprueba controles, reloj, reinicio visual, carga inválida y recarga sin duplicados.
 
@@ -58,6 +69,6 @@ El cliente valida la estructura del checksum, pero no recalcula su SHA-256. Ante
 - Si se requiere un ejecutable: añadir HarvestPlayback a **File > Build Profiles > Scene List**, seleccionarla como escena inicial y realizar un build. El generador no altera las escenas de build existentes. No se ha comprobado un build de escritorio.
 - Sustituir después los hijos Body/Front de los prefabs Harvester y Cart por modelos, conservando su raíz con AgentView, frente local +Z y escala de una celda. Los cambios de materiales y geometría no requieren modificar el lector.
 
-No se incluye conexión en vivo, exportación MP4/HTML, selector de archivos en runtime ni modelos definitivos. No se hizo commit ni push.
+No se incluye exportación MP4/HTML, selector de archivos en runtime ni modelos definitivos.
 
 Consulta [PLAN_MVP_UNITY.md](PLAN_MVP_UNITY.md) para el contrato y las etapas del proyecto. La implementación usa texto agrupado para los agentes en lugar de un prefab AgentRow: no requiere asignaciones por agente.

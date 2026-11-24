@@ -109,5 +109,82 @@ namespace HarvestSim.Tests
             Assert.Throws<FormatException>(() => TraceLoader.Parse("{"));
             Assert.Throws<FormatException>(() => TraceLoader.Parse("{\"schema_version\":\"2.1\",\"schema_version\":\"2.1\"}"));
         }
+        [Test]
+        public void Trace22KeepsFuelAuctionAndSafetyEventsAcrossSeeking()
+        {
+            var json = Fixture(); json["schema_version"] = "2.2";
+            foreach (JObject tick in (JArray)json["ticks"])
+                foreach (JObject change in (JArray)tick["cambios"])
+                    if ((string)change["tipo"] == "CELDA_COSECHADA") change["cantidad"] = 1;
+            json["ticks"][0]["cambios"][0]["set"]["combustible"] = 75.5;
+            ((JArray)json["ticks"][1]["cambios"]).Add(new JObject {
+                ["tipo"] = "MENSAJE_ENVIADO", ["id"] = 1000, ["tipo_mensaje"] = "ACEPTACION",
+                ["performativa"] = "accept-proposal", ["de"] = "cosechadora_1", ["a"] = "carro_1",
+                ["payload"] = new JObject { ["servicio"] = 1 }, ["entrega_en"] = 4 });
+            ((JArray)json["ticks"][3]["cambios"]).Add(new JObject {
+                ["tipo"] = "RECARGA", ["agente"] = "carro_1", ["cantidad"] = 10, ["nivel"] = 80 });
+            ((JArray)json["ticks"][3]["cambios"]).Add(new JObject {
+                ["tipo"] = "RESTRICCION", ["agente"] = "carro_1", ["regla"] = "reserva",
+                ["detalle"] = "pasillo ocupado" });
+            var trace = TraceLoader.Parse(json.ToString()); var playback = new TracePlayback(trace);
+            Assert.That(playback.State.Agents["cosechadora_1"].Fuel, Is.EqualTo(75.5f));
+            playback.Seek(1);
+            Assert.That(playback.State.Winners["cosechadora_1"], Is.EqualTo("carro_1"));
+            playback.Seek(3);
+            Assert.That(playback.State.Events.Count(e => (string)e["tipo"] == "RECARGA" || (string)e["tipo"] == "RESTRICCION"), Is.EqualTo(2));
+            playback.Seek(0);
+            Assert.That(playback.State.Winners, Is.Empty);
+            json["ticks"][1]["cambios"][1]["performativa"] = "request";
+            Assert.Throws<FormatException>(() => TraceLoader.Parse(json.ToString()));
+        }
+        static string[] Entrega2() => Directory.GetFiles("Assets/Data/Traces/entrega2", "*.json").OrderBy(f => f).ToArray();
+
+        [TestCaseSource(nameof(Entrega2))]
+        public void RealSecondDeliveryTracesLoadAndPlayToTheEnd(string path)
+        {
+            // Traces reales de harvest_sim (D, E y F con las 4 estrategias), exportados ya validados por
+            // tools/exportar_traces_unity.py: Unity debe aceptarlos y reproducirlos hasta el final.
+            var trace = TraceLoader.Parse(File.ReadAllText(path));
+            var playback = new TracePlayback(trace);
+            playback.Seek(trace.TotalTicks);
+            Assert.That(playback.State.Tick, Is.EqualTo(trace.TotalTicks));
+            Assert.That(playback.State.Delivered, Is.EqualTo((int)trace.Json["metricas"]["grano_total_entregado"]));
+            Assert.That(playback.State.Agents.Values.All(a => a.Load == 0), Is.True);
+            playback.Seek(0);
+            Assert.That(playback.State.Delivered, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void Trace22AcceptsHarvestWithoutQuantityButRejectsInvalidQuantity()
+        {
+            // En el esquema 2.2 de harvest_sim, CELDA_COSECHADA.cantidad es opcional.
+            var json = Fixture(); json["schema_version"] = "2.2";
+            Assert.DoesNotThrow(() => TraceLoader.Parse(json.ToString()));
+            foreach (JObject tick in (JArray)json["ticks"])
+                foreach (JObject change in (JArray)tick["cambios"])
+                    if ((string)change["tipo"] == "CELDA_COSECHADA") change["cantidad"] = 0;
+            Assert.Throws<FormatException>(() => TraceLoader.Parse(json.ToString()));
+        }
+        [Test]
+        public void Trace22AcceptsAdditionalAgentAndYieldMatrix()
+        {
+            var json = Fixture(); json["schema_version"] = "2.2";
+            foreach (JObject tick in (JArray)json["ticks"])
+                foreach (JObject change in (JArray)tick["cambios"])
+                    if ((string)change["tipo"] == "CELDA_COSECHADA") change["cantidad"] = 1;
+            json["mundo"]["bases"]["carro_2"] = new JArray(3, 0);
+            json["mundo"]["rendimiento"] = new JArray(new JArray(0, 0, 0, 0), new JArray(1, 2, 3, 4), new JArray(4, 3, 2, 1));
+            ((JArray)json["agentes"]).Add(new JObject { ["id"] = "carro_2", ["tipo"] = "carro", ["capacidad"] = 6,
+                                                ["base"] = new JArray(3, 0) });
+            ((JArray)json["ticks"][0]["cambios"]).Add(new JObject { ["tipo"] = "AGENTE", ["id"] = "carro_2",
+                ["set"] = new JObject { ["pose"] = new JObject { ["x"] = 3, ["y"] = 0, ["orientacion"] = "N" },
+                                        ["estado"] = "EN_BASE", ["carga"] = 0, ["combustible"] = 90 } });
+            var playback = new TracePlayback(TraceLoader.Parse(json.ToString()));
+            playback.Seek(playback.State.Tick + 3);
+            Assert.That(playback.State.Agents.Count, Is.EqualTo(3));
+            Assert.That(playback.State.Agents["carro_2"].Fuel, Is.EqualTo(90));
+            json["mundo"]["rendimiento"][0][1] = 2;
+            Assert.Throws<FormatException>(() => TraceLoader.Parse(json.ToString()));
+        }
     }
 }

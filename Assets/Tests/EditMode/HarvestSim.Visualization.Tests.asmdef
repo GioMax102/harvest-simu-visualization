@@ -1,7 +1,8 @@
 {
   "name": "HarvestSim.Visualization.Tests",
   "references": [
-    "HarvestSim.Visualization"
+    "HarvestSim.Visualization",
+    "HarvestSim.Visualization.Editor"
   ],
   "optionalUnityReferences": [
     "TestAssemblies"
