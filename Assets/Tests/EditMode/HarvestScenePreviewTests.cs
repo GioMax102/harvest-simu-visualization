@@ -55,14 +55,13 @@ namespace HarvestSim.Tests
         }
 
         [UnityTest]
-        public IEnumerator ChangedTraceRefreshesOnceAndClosingAnotherSceneKeepsPreview()
+        public IEnumerator ChangedTraceRefreshesOnce()
         {
             var scene = SceneManager.GetSceneByPath(HarvestSceneBuilder.ScenePath);
             bool opened = !scene.IsValid() || !scene.isLoaded;
             if (opened) scene = EditorSceneManager.OpenScene(HarvestSceneBuilder.ScenePath, OpenSceneMode.Additive);
             var controller = scene.GetRootGameObjects().SelectMany(go => go.GetComponentsInChildren<PlaybackController>(true)).First();
             var original = controller.initialTrace;
-            var otherScene = default(Scene);
             try
             {
                 HarvestScenePreview.Build(controller);
@@ -90,14 +89,38 @@ namespace HarvestSim.Tests
                     yield return null;
                     Assert.That(Preview().GetInstanceID(), Is.EqualTo(changedId), "El nuevo trace debe reconstruirse solo una vez.");
                 }
-
-                otherScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-                EditorSceneManager.CloseScene(otherScene, true);
-                Assert.That(Preview().GetInstanceID(), Is.EqualTo(changedId));
             }
             finally
             {
                 controller.initialTrace = original;
+                HarvestScenePreview.Clear();
+                if (opened) EditorSceneManager.CloseScene(scene, true);
+                else HarvestScenePreview.Build(controller);
+            }
+        }
+
+        [Test]
+        public void ClosingAnotherSceneKeepsPreview()
+        {
+            const string otherPath = "Assets/Scenes/SampleScene.unity";
+            var otherScene = SceneManager.GetSceneByPath(otherPath);
+            if (otherScene.IsValid() && otherScene.isLoaded)
+                Assert.Ignore("SampleScene ya está abierta; se conserva la escena del usuario.");
+
+            var scene = SceneManager.GetSceneByPath(HarvestSceneBuilder.ScenePath);
+            bool opened = !scene.IsValid() || !scene.isLoaded;
+            if (opened) scene = EditorSceneManager.OpenScene(HarvestSceneBuilder.ScenePath, OpenSceneMode.Additive);
+            var controller = scene.GetRootGameObjects().SelectMany(go => go.GetComponentsInChildren<PlaybackController>(true)).First();
+            try
+            {
+                HarvestScenePreview.Build(controller);
+                int previewId = Preview().GetInstanceID();
+                otherScene = EditorSceneManager.OpenScene(otherPath, OpenSceneMode.Additive);
+                EditorSceneManager.CloseScene(otherScene, true);
+                Assert.That(Preview().GetInstanceID(), Is.EqualTo(previewId));
+            }
+            finally
+            {
                 HarvestScenePreview.Clear();
                 if (otherScene.IsValid() && otherScene.isLoaded) EditorSceneManager.CloseScene(otherScene, true);
                 if (opened) EditorSceneManager.CloseScene(scene, true);
