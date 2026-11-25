@@ -36,3 +36,15 @@ for name in ["trace_ejemplo", "escenario_a", "escenario_b", "escenario_c"]:
 ```
 
 Actualizar también el commit de origen en este documento y ejecutar las pruebas al regenerar.
+
+## Segunda entrega (`entrega2/`)
+
+Traces reales en formato 2.2 de los escenarios D, E y F con las cuatro estrategias (`base`, `subasta`, `anticipada` y `anticipada_plus`) y seed 0. Se generaron con harvest_sim `development` (después del PR #17) usando:
+
+```bash
+python tools/exportar_traces_unity.py DESTINO/Assets/Data/Traces/entrega2 \
+  --escenarios escenario_d escenario_e escenario_f \
+  --estrategias base subasta anticipada anticipada_plus --seed 0
+```
+
+El exportador solo escribe los traces que pasan `validar_trace`. La prueba `RealSecondDeliveryTracesLoadAndPlayToTheEnd` comprueba que Unity carga y reproduce cada uno hasta el final.

@@ -137,6 +137,34 @@ namespace HarvestSim.Tests
             json["ticks"][1]["cambios"][1]["performativa"] = "request";
             Assert.Throws<FormatException>(() => TraceLoader.Parse(json.ToString()));
         }
+        static string[] Entrega2() => Directory.GetFiles("Assets/Data/Traces/entrega2", "*.json").OrderBy(f => f).ToArray();
+
+        [TestCaseSource(nameof(Entrega2))]
+        public void RealSecondDeliveryTracesLoadAndPlayToTheEnd(string path)
+        {
+            // Traces reales de harvest_sim (D, E y F con las 4 estrategias), exportados ya validados por
+            // tools/exportar_traces_unity.py: Unity debe aceptarlos y reproducirlos hasta el final.
+            var trace = TraceLoader.Parse(File.ReadAllText(path));
+            var playback = new TracePlayback(trace);
+            playback.Seek(trace.TotalTicks);
+            Assert.That(playback.State.Tick, Is.EqualTo(trace.TotalTicks));
+            Assert.That(playback.State.Delivered, Is.EqualTo((int)trace.Json["metricas"]["grano_total_entregado"]));
+            Assert.That(playback.State.Agents.Values.All(a => a.Load == 0), Is.True);
+            playback.Seek(0);
+            Assert.That(playback.State.Delivered, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void Trace22AcceptsHarvestWithoutQuantityButRejectsInvalidQuantity()
+        {
+            // En el esquema 2.2 de harvest_sim, CELDA_COSECHADA.cantidad es opcional.
+            var json = Fixture(); json["schema_version"] = "2.2";
+            Assert.DoesNotThrow(() => TraceLoader.Parse(json.ToString()));
+            foreach (JObject tick in (JArray)json["ticks"])
+                foreach (JObject change in (JArray)tick["cambios"])
+                    if ((string)change["tipo"] == "CELDA_COSECHADA") change["cantidad"] = 0;
+            Assert.Throws<FormatException>(() => TraceLoader.Parse(json.ToString()));
+        }
         [Test]
         public void Trace22AcceptsAdditionalAgentAndYieldMatrix()
         {
