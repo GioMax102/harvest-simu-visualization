@@ -67,8 +67,8 @@ namespace HarvestSim.Tests
             Assert.That(delivered, Is.GreaterThan(0));
             controller.Restart(); Assert.That(controller.Playback.State.Delivered, Is.Zero);
             Assert.That(controller.Playback.State.Harvested.Count, Is.Zero);
-            foreach (Transform cell in controller.worldView.cellsRoot)
-                if (!cell.name.EndsWith("_0")) Assert.That(cell.GetComponent<Renderer>().sharedMaterial, Is.EqualTo(controller.worldView.cropMaterial));
+            Assert.That(controller.worldView.Corn.StandingCellCount, Is.EqualTo(controller.worldView.Grid.FieldCellCount));
+            Assert.That(controller.worldView.Ground.StubbleCellCount, Is.Zero);
             foreach (float speed in new[] { 1f, 16f })
             {
                 controller.Restart(); controller.SetSpeed(speed); controller.PlayPause();
@@ -146,34 +146,32 @@ namespace HarvestSim.Tests
             state.Events.Add(new JObject { ["tipo"] = "RESTRICCION", ["agente"] = "carro_1", ["regla"] = "reserva" });
             state.Events.Add(new JObject { ["tipo"] = "RESTRICCION", ["agente"] = "carro_1", ["regla"] = "pasillo" });
             controller.worldView.Render(state);
-            var label = controller.worldView.agentsRoot.Find("carro_1/AgentLabel").GetComponent<TextMesh>();
+            var label = controller.worldView.agentsRoot.Find("carro_1/AgentLabel").GetComponent<TMPro.TMP_Text>();
             Assert.That(label.text, Does.Contain("RECARGA"));
             Assert.That(label.text, Does.Contain("RESTRICCION: reserva"));
             Assert.That(label.text, Does.Contain("RESTRICCION: pasillo"));
         }
 
         [UnityTest]
-        public IEnumerator AdjacentAgentLabelsStaySeparateAndOffTheirBodies()
+        public IEnumerator AgentLabelsFloatAboveVehiclesAndFaceTheCamera()
         {
             yield return EditorSceneManager.LoadSceneAsyncInPlayMode("Assets/Scenes/HarvestPlayback.unity", new LoadSceneParameters(LoadSceneMode.Single));
             yield return null;
             var controller = Object.FindFirstObjectByType<PlaybackController>();
             controller.LoadTrace(AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/Traces/trace_ejemplo.json"));
             yield return null;
-            var cart = controller.worldView.agentsRoot.Find("carro_1");
-            var harvester = controller.worldView.agentsRoot.Find("cosechadora_1");
-            var cartLabel = cart.Find("AgentLabel").GetComponent<TextMesh>();
-            var harvesterLabel = harvester.Find("AgentLabel").GetComponent<TextMesh>();
-            Assert.That(cartLabel.text, Is.EqualTo("carro_1"));
-            Assert.That(harvesterLabel.text, Is.EqualTo("cosechadora_1"));
-            Assert.That(cartLabel.GetComponent<Renderer>().bounds.max.x,
-                Is.LessThan(harvesterLabel.GetComponent<Renderer>().bounds.min.x));
-            foreach (var agent in new[] { cart, harvester })
-                Assert.That(agent.Find("AgentLabel").GetComponent<Renderer>().bounds.min.z,
-                    Is.GreaterThan(agent.Find("Body").GetComponent<Renderer>().bounds.max.z));
+            var camera = controller.worldView.mapCamera;
+            foreach (var id in new[] { "carro_1", "cosechadora_1" })
+            {
+                var agent = controller.worldView.agentsRoot.Find(id);
+                var label = agent.Find("AgentLabel").GetComponent<TMPro.TMP_Text>();
+                Assert.That(label.GetParsedText(), Does.StartWith(id));
+                Assert.That(label.transform.position.y, Is.GreaterThan(agent.Find("Body").GetComponent<Renderer>().bounds.max.y));
+                Assert.That(Quaternion.Angle(label.transform.rotation, camera.transform.rotation), Is.LessThan(1f));
+            }
             controller.worldView.Interpolate(controller.Playback.State, controller.Playback.State, .5f);
-            Assert.That(cartLabel.transform.position.z - cart.position.z, Is.EqualTo(.5f).Within(.001f));
-            Assert.That(harvesterLabel.transform.position.z - harvester.position.z, Is.EqualTo(.5f).Within(.001f));
+            var cart = controller.worldView.agentsRoot.Find("carro_1");
+            Assert.That(cart.Find("AgentLabel").position.y - cart.position.y, Is.GreaterThanOrEqualTo(AgentView.LabelHeight - .001f), "La placa puede subir para no encimarse, nunca bajar.");
         }
 
         [UnityTest]

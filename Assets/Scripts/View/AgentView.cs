@@ -1,73 +1,176 @@
+using System.Text;
+using TMPro;
 using UnityEngine;
 
 namespace HarvestSim.Visualization
 {
+    /// <summary>
+    /// Vehículo de un agente: modelo (hijo "Body"), anillo de color en el suelo con su identidad y placa con id, estado,
+    /// carga y alertas. Solo muestra el estado del trace; la pose interpolada la calcula <see cref="VehicleMotion"/>.
+    /// </summary>
     public sealed class AgentView : MonoBehaviour
     {
-        string agentId;
-        TextMesh label;
-        Renderer bodyRenderer;
-        bool restricted;
-        public void Initialize(AgentData agent, int variant = 0)
+        public const float VehicleFootprint = .92f;
+        public const float LabelHeight = 7.5f;
+
+        public string AgentId { get; private set; }
+        public string AgentType { get; private set; }
+        public Color Identity { get; private set; }
+        public TextMeshPro Label { get; private set; }
+        public Renderer Marker { get; private set; }
+        public Transform Body { get; private set; }
+        public bool Restricted { get; private set; }
+        public bool Refueled { get; private set; }
+
+        MaterialPropertyBlock markerProperties;
+        Camera viewer;
+        float cellSize = 1;
+        int capacity;
+
+        static readonly int BaseColor = Shader.PropertyToID("_BaseColor");
+
+        public void Initialize(AgentData agent, Color identity, HarvestArt art, float cell, Camera camera)
         {
-            agentId = agent.Id; gameObject.name = agent.Id;
-            var text = new GameObject("AgentLabel");
-            text.transform.SetParent(transform, false);
-            text.transform.localPosition = new Vector3(0, .9f, .5f);
-            text.transform.localRotation = Quaternion.Euler(90, 0, 0);
-            label = text.AddComponent<TextMesh>();
-            label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            label.GetComponent<Renderer>().sharedMaterial = label.font.material;
-            label.anchor = TextAnchor.LowerCenter;
-            label.alignment = TextAlignment.Center;
-            label.fontSize = 32; label.characterSize = .06f;
-            label.color = Color.black;
-            bodyRenderer = transform.Find("Body")?.GetComponent<Renderer>();
-            if (bodyRenderer)
+            AgentId = agent.Id; AgentType = agent.Type; Identity = identity; capacity = agent.Capacity;
+            gameObject.name = agent.Id;
+            cellSize = cell; viewer = camera;
+            Body = transform.Find("Body");
+            if (Body)
             {
-                var materials = bodyRenderer.sharedMaterials;
-                for (int i = 0; i < materials.Length; i++)
+                Body.localScale *= cell * VehicleFootprint;
+                // El pivote de los modelos no siempre está en la base: se apoya el modelo sobre el suelo.
+                var renderers = Body.GetComponentsInChildren<Renderer>();
+                if (renderers.Length > 0)
                 {
-                    if (!materials[i] || materials[i].name != "HarvestGreen") continue;
-                    var tint = Color.HSVToRGB(agent.Type == "carro" ? .30f : .33f, .82f, .48f + .04f * (variant % 5));
-                    var properties = new MaterialPropertyBlock();
-                    properties.SetColor("_BaseColor", tint);
-                    bodyRenderer.SetPropertyBlock(properties, i);
+                    var bounds = renderers[0].bounds;
+                    foreach (var r in renderers) bounds.Encapsulate(r.bounds);
+                    Body.position += Vector3.up * (transform.position.y - bounds.min.y);
                 }
             }
-        }
-        public void Render(AgentState state, Vector3 position, string alert = null, string proposal = null)
-        {
-            transform.localPosition = position;
-            float angle = state.Orientation switch { "E" => 90, "S" => 180, "O" => 270, _ => 0 };
-            transform.localRotation = Quaternion.Euler(0, angle, 0);
-            restricted = alert != null && alert.Contains("RESTRICCION:");
-            if (label)
+
+            if (art && art.markerMaterial)
             {
-                label.text = agentId + (proposal == null ? "" : "\nOferta: " + proposal) + (alert == null ? "" : "\n" + alert);
-                string[] lines = label.text.Split('\n');
-                int longest = 1;
-                foreach (string line in lines) longest = Mathf.Max(longest, line.Length);
-                label.characterSize = .06f * Mathf.Min(1, 8f / longest, 2f / lines.Length);
-                PositionLabel();
+                var ring = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                ring.name = "Marker";
+                DestroyCollider(ring);
+                ring.transform.SetParent(transform, false);
+                ring.transform.localPosition = Vector3.up * .12f;
+                ring.transform.localRotation = Quaternion.Euler(90, 0, 0);
+                ring.transform.localScale = Vector3.one * cell * 1.02f;
+                Marker = ring.GetComponent<Renderer>();
+                Marker.sharedMaterial = art.markerMaterial;
+                Marker.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                Marker.receiveShadows = false;
+                markerProperties = new MaterialPropertyBlock();
+                SetMarkerColor(identity);
+            }
+
+            var text = new GameObject("AgentLabel");
+            text.transform.SetParent(transform, false);
+            text.transform.localPosition = Vector3.up * LabelHeight;
+            Label = text.AddComponent<TextMeshPro>();
+            if (art && art.labelFont) Label.font = art.labelFont;
+            if (art && art.labelMaterial) Label.fontSharedMaterial = art.labelMaterial;
+            Label.alignment = TextAlignmentOptions.Bottom;
+            Label.fontSize = 6;
+            Label.textWrappingMode = TextWrappingModes.NoWrap;
+            Label.richText = true;
+            Label.color = Color.white;
+            Label.rectTransform.sizeDelta = new Vector2(40, 10);
+            Label.rectTransform.pivot = new Vector2(.5f, 0);
+            Label.text = agent.Id;
+        }
+
+        void SetMarkerColor(Color color)
+        {
+            if (!Marker) return;
+            markerProperties.SetColor(BaseColor, color);
+            Marker.SetPropertyBlock(markerProperties);
+        }
+
+        public void Render(AgentState state, VehiclePose pose, string alert = null, string proposal = null)
+        {
+            SetPose(pose);
+            Restricted = alert != null && alert.Contains("RESTRICCION:");
+            Refueled = alert != null && alert.Contains("RECARGA");
+            if (!Restricted) SetMarkerColor(Identity);
+            if (!Label) return;
+            var builder = new StringBuilder();
+            builder.Append("<b><color=#").Append(ColorUtility.ToHtmlStringRGB(Color.Lerp(Identity, Color.white, .35f))).Append('>')
+                .Append(AgentId).Append("</color></b>\n");
+            builder.Append("<size=80%>").Append(StatusText(state.Status));
+            if (capacity > 0) builder.Append(" · ").Append(state.Load).Append('/').Append(capacity);
+            builder.Append("</size>");
+            if (proposal != null) builder.Append("\n<color=#9fd0ff>Oferta: ").Append(proposal).Append("</color>");
+            if (alert != null) builder.Append("\n<color=#ffb4a0>").Append(alert).Append("</color>");
+            Label.text = builder.ToString();
+        }
+
+        public void SetPose(VehiclePose pose)
+        {
+            transform.localPosition = pose.Position;
+            transform.localRotation = pose.Rotation;
+            Billboard();
+        }
+
+        public static string StatusText(string status) => status switch
+        {
+            "EN_BASE" => "En base",
+            "YENDO_A_CAMPO" => "Yendo al campo",
+            "COSECHANDO" => "Cosechando",
+            "LLENA_ESPERANDO" => "Llena, esperando",
+            "TRANSFIRIENDO" => "Transfiriendo",
+            "REGRESANDO_A_BASE" => "Regresando a base",
+            "FIN" => "Terminó",
+            "YENDO_A_COSECHADORA" => "Yendo a cosechadora",
+            "ESPERANDO_TRANSFERENCIA" => "Esperando transferencia",
+            "YENDO_A_BODEGA" => "Yendo a bodega",
+            "DESCARGANDO" => "Descargando",
+            _ => status ?? ""
+        };
+
+        void LateUpdate()
+        {
+            Billboard();
+            if (Marker && (Restricted || Refueled))
+            {
+                float pulse = .5f + .5f * Mathf.Sin(Time.unscaledTime * 9f);
+                var alertColor = Restricted ? new Color(.95f, .2f, .15f) : new Color(.3f, .95f, .4f);
+                SetMarkerColor(Color.Lerp(Identity, alertColor, pulse));
             }
         }
-        public void Interpolate(AgentState from, AgentState to, Vector3 start, Vector3 end, float t)
+
+        public void FaceCamera() => Billboard();
+
+        /// <summary>Desplaza la placa (en el mundo) para que no se encime con la de un vecino.</summary>
+        public void SetLabelOffset(Vector3 offset)
         {
-            transform.localPosition = Vector3.Lerp(start, end, t);
-            float a = from.Orientation switch { "E" => 90, "S" => 180, "O" => 270, _ => 0 };
-            float b = to.Orientation switch { "E" => 90, "S" => 180, "O" => 270, _ => 0 };
-            transform.localRotation = Quaternion.Slerp(Quaternion.Euler(0, a, 0), Quaternion.Euler(0, b, 0), t);
-            if (label) PositionLabel();
+            if (Label) Label.transform.position = LabelAnchor + offset;
         }
-        void PositionLabel()
+
+        /// <summary>Punto de anclaje de la placa sin el desplazamiento por vecinos.</summary>
+        public Vector3 LabelAnchor => transform.position + Vector3.up * LabelHeight;
+
+        /// <summary>La placa mira a la cámara y conserva un tamaño legible en pantalla.</summary>
+        void Billboard()
         {
-            label.transform.position = transform.position + new Vector3(0, .9f, .5f);
-            label.transform.rotation = Quaternion.Euler(90, 0, 0);
+            if (!Label) return;
+            var cam = viewer ? viewer : Camera.main;
+            if (!cam) return;
+            var t = Label.transform;
+            t.rotation = cam.transform.rotation;
+            float scale;
+            if (cam.orthographic) scale = cam.orthographicSize * .045f;
+            else scale = Vector3.Distance(cam.transform.position, t.position) * Mathf.Tan(cam.fieldOfView * Mathf.Deg2Rad / 2) * .09f;
+            scale = Mathf.Clamp(scale, .25f, cellSize * .6f);
+            t.localScale = Vector3.one * scale;
         }
-        void Update()
+
+        static void DestroyCollider(GameObject go)
         {
-            if (bodyRenderer) bodyRenderer.enabled = !restricted || Mathf.FloorToInt(Time.unscaledTime * 4) % 2 == 0;
+            var collider = go.GetComponent<Collider>();
+            if (!collider) return;
+            if (Application.isPlaying) Destroy(collider); else DestroyImmediate(collider);
         }
     }
 }

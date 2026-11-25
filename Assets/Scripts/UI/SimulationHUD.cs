@@ -1,165 +1,415 @@
+using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using TMPro;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 namespace HarvestSim.Visualization
 {
+    public enum ServerState { Unknown, Checking, Online, Offline, Simulating }
+
+    /// <summary>
+    /// HUD superpuesto a la vista 3D. Barra superior: servidor y simulación. Barra inferior: reproducción y línea de tiempo.
+    /// Panel lateral plegable: agentes, campo, eventos, métricas finales y leyenda. Solo muestra el trace; no decide nada.
+    /// La jerarquía se genera con Harvest Sim &gt; Actualizar escena realista (HarvestHudBuilder).
+    /// </summary>
     public sealed class SimulationHUD : MonoBehaviour
     {
-        public const string LegendText = "LEYENDA\nCosechadora: cabezal · Carro: tractor y remolque\n" +
-            "B: bodega · Discos: bases\nAmarillo: cultivo · Beige: cosechado\n" +
-            "Gris azulado: servicio · Gris oscuro: obstáculo\n\n" +
-            "CÁMARA\nPerspectiva 3D: arrastra con clic derecho para girar\n" +
-            "Rueda: acercar o alejar · Vista cenital: restablecer";
-        public TMP_Text header, agentsText, worldText, eventsText, metricsText, errorText, playLabel;
-        public Button playButton, backButton, forwardButton, restartButton, endButton;
-        public TMP_Dropdown speedDropdown;
+        public static string LegendText => HudFormat.Legend;
+        public static readonly float[] Speeds = { 1, 4, 8, 16, 32 };
+
+        [Header("Barra superior")]
+        public RectTransform topBar;
+        public TMP_Text header;
         public TMP_Dropdown scenarioDropdown, strategyDropdown;
         public TMP_InputField seedInput;
         public Button simulateButton, refreshScenariosButton;
-        public Button perspectiveButton, topButton;
+        public Image serverDot;
+        public TMP_Text serverText;
+
+        [Header("Aviso")]
+        public GameObject toast;
+        public TMP_Text errorText;
+        public Button toastClose;
+
+        [Header("Reproducción")]
+        public RectTransform bottomBar;
+        public Button playButton, backButton, forwardButton, restartButton, endButton;
+        public Image playIcon;
+        public Sprite playSprite, pauseSprite;
+        public TMP_Text playLabel, tickText;
+        public TMP_Dropdown speedDropdown;
+        public Slider timeline;
+        public RawImage timelineMarks;
+
+        [Header("Cámara")]
+        public Button perspectiveButton, topButton, followButton, frameButton;
+
+        [Header("Panel lateral")]
+        public RectTransform sidePanel;
+        public Button panelToggleButton, panelOpenButton;
+        public RectTransform agentCards;
+        public HudAgentCard cardTemplate;
+        public TMP_Text agentsText, worldText, eventsText, metricsText, legendText;
+        public RectTransform harvestFill, deliveredFill;
+
+        [Header("Tooltip")]
+        public RectTransform tooltip;
+        public TMP_Text tooltipText;
+
         PlaybackController controller;
-        readonly float[] speeds = { 1, 4, 8, 16 };
+        TraceData shownTrace;
+        Texture2D marksTexture;
+        readonly List<HudAgentCard> cards = new();
+        bool updatingTimeline;
+        Vector4 lastInsets = new(-1, -1, -1, -1);
+
+        public IReadOnlyList<HudAgentCard> Cards => cards;
+        public ServerState Server { get; private set; } = ServerState.Unknown;
+
         public void Bind(PlaybackController value)
         {
             Unbind(); controller = value;
-            var legend = speedDropdown.transform.parent.Find("Legend");
-            if (legend && legend.TryGetComponent<TMP_Text>(out var text)) text.text = LegendText;
-            playButton.onClick.AddListener(controller.PlayPause);
-            backButton.onClick.AddListener(controller.StepBackward);
-            forwardButton.onClick.AddListener(controller.StepForward);
-            restartButton.onClick.AddListener(controller.Restart);
-            endButton.onClick.AddListener(controller.GoToEnd);
-            speedDropdown.onValueChanged.AddListener(ChangeSpeed);
+            Listen(playButton, controller.PlayPause);
+            Listen(backButton, controller.StepBackward);
+            Listen(forwardButton, controller.StepForward);
+            Listen(restartButton, controller.Restart);
+            Listen(endButton, controller.GoToEnd);
+            if (speedDropdown) speedDropdown.onValueChanged.AddListener(ChangeSpeed);
+            if (timeline) timeline.onValueChanged.AddListener(OnTimeline);
+            Listen(perspectiveButton, () => controller.worldView.SetPerspective());
+            Listen(topButton, () => controller.worldView.ResetCamera());
+            Listen(frameButton, () => controller.worldView.FrameCamera(controller.worldView.mapCamera));
+            Listen(followButton, FollowNext);
+            Listen(panelToggleButton, () => SetPanel(false));
+            Listen(panelOpenButton, () => SetPanel(true));
+            Listen(toastClose, ClearError);
+            if (legendText) legendText.text = LegendText;
         }
+
+        void Listen(Button button, UnityEngine.Events.UnityAction action)
+        {
+            if (!button) return;
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(action);
+        }
+
         void Unbind()
         {
             if (!controller) return;
-            playButton.onClick.RemoveListener(controller.PlayPause);
-            backButton.onClick.RemoveListener(controller.StepBackward);
-            forwardButton.onClick.RemoveListener(controller.StepForward);
-            restartButton.onClick.RemoveListener(controller.Restart);
-            endButton.onClick.RemoveListener(controller.GoToEnd);
-            speedDropdown.onValueChanged.RemoveListener(ChangeSpeed);
+            if (speedDropdown) speedDropdown.onValueChanged.RemoveListener(ChangeSpeed);
+            if (timeline) timeline.onValueChanged.RemoveListener(OnTimeline);
             controller = null;
         }
-        void OnDestroy() => Unbind();
-        void ChangeSpeed(int index) => controller.SetSpeed(speeds[index]);
+
+        void OnDestroy()
+        {
+            Unbind();
+            if (marksTexture) Destroy(marksTexture);
+        }
+
+        void ChangeSpeed(int index)
+        {
+            if (controller && index >= 0 && index < Speeds.Length) controller.SetSpeed(Speeds[index]);
+        }
+
+        void OnTimeline(float value)
+        {
+            if (updatingTimeline || !controller || controller.Playback == null) return;
+            controller.SeekTo(Mathf.RoundToInt(value));
+        }
+
         public void BindClient(TraceClient client)
         {
-            if (!scenarioDropdown)
-            {
-                var parent = speedDropdown.transform.parent;
-                scenarioDropdown = Instantiate(speedDropdown, parent);
-                scenarioDropdown.name = "Escenario";
-                scenarioDropdown.onValueChanged.RemoveAllListeners();
-                scenarioDropdown.ClearOptions();
-                scenarioDropdown.AddOptions(new System.Collections.Generic.List<string> { "escenario_a" });
-                strategyDropdown = Instantiate(speedDropdown, parent);
-                strategyDropdown.name = "Estrategia";
-                strategyDropdown.onValueChanged.RemoveAllListeners();
-                strategyDropdown.ClearOptions();
-                strategyDropdown.AddOptions(new System.Collections.Generic.List<string> { "base", "subasta", "anticipada", "anticipada_plus" });
-                var field = TMP_DefaultControls.CreateInputField(new TMP_DefaultControls.Resources());
-                field.name = "Seed"; field.transform.SetParent(parent, false);
-                field.AddComponent<LayoutElement>().minHeight = 40;
-                seedInput = field.GetComponent<TMP_InputField>();
-                seedInput.contentType = TMP_InputField.ContentType.IntegerNumber;
-                seedInput.text = "0";
-                foreach (var text in field.GetComponentsInChildren<TMP_Text>(true)) text.font = header.font;
-                if (seedInput.placeholder is TMP_Text placeholder) placeholder.text = "Semilla";
-                simulateButton = Instantiate(playButton, parent);
-                simulateButton.name = "Simular";
-                simulateButton.onClick.RemoveAllListeners();
-                simulateButton.GetComponentInChildren<TMP_Text>().text = "Simular";
-                refreshScenariosButton = Instantiate(playButton, parent);
-                refreshScenariosButton.name = "ActualizarEscenarios";
-                refreshScenariosButton.GetComponentInChildren<TMP_Text>().text = "Actualizar escenarios";
-                perspectiveButton = Instantiate(playButton, parent);
-                perspectiveButton.name = "Perspectiva";
-                perspectiveButton.GetComponentInChildren<TMP_Text>().text = "Perspectiva 3D";
-                topButton = Instantiate(playButton, parent);
-                topButton.name = "Cenital";
-                topButton.GetComponentInChildren<TMP_Text>().text = "Vista cenital";
-                var title = Instantiate(header, parent); title.text = "SERVIDOR / SIMULACIÓN"; title.fontSize = 18;
-                var scenarioLabel = Instantiate(header, parent); scenarioLabel.text = "Escenario"; scenarioLabel.fontSize = 16;
-                var strategyLabel = Instantiate(header, parent); strategyLabel.text = "Estrategia"; strategyLabel.fontSize = 16;
-                var seedLabel = Instantiate(header, parent); seedLabel.text = "Semilla"; seedLabel.fontSize = 16;
-                int position = speedDropdown.transform.GetSiblingIndex() - 1;
-                foreach (var element in new Transform[] { title.transform, scenarioLabel.transform, scenarioDropdown.transform,
-                             strategyLabel.transform, strategyDropdown.transform, seedLabel.transform, seedInput.transform,
-                             simulateButton.transform, refreshScenariosButton.transform, perspectiveButton.transform, topButton.transform })
-                    element.SetSiblingIndex(position++);
-            }
-            simulateButton.onClick.RemoveAllListeners();
-            simulateButton.onClick.AddListener(client.Simulate);
-            refreshScenariosButton.onClick.RemoveAllListeners();
-            refreshScenariosButton.onClick.AddListener(client.RefreshScenarios);
-            perspectiveButton.onClick.RemoveAllListeners();
-            perspectiveButton.onClick.AddListener(controller.worldView.SetPerspective);
-            topButton.onClick.RemoveAllListeners();
-            topButton.onClick.AddListener(controller.worldView.ResetCamera);
+            Listen(simulateButton, client.Simulate);
+            Listen(refreshScenariosButton, client.RefreshScenarios);
         }
-        public void SetScenarios(System.Collections.Generic.List<string> names)
+
+        public void SetScenarios(List<string> names)
         {
+            if (!scenarioDropdown) return;
+            string current = scenarioDropdown.options.Count > 0 ? scenarioDropdown.options[scenarioDropdown.value].text : null;
             scenarioDropdown.ClearOptions(); scenarioDropdown.AddOptions(names);
+            int index = current == null ? -1 : names.IndexOf(current);
+            if (index >= 0) scenarioDropdown.SetValueWithoutNotify(index);
         }
+
+        public void SetServerState(ServerState state, string detail = null)
+        {
+            Server = state;
+            if (serverDot)
+                serverDot.color = state switch
+                {
+                    ServerState.Online => new Color(.4f, .85f, .5f),
+                    ServerState.Offline => new Color(.95f, .36f, .3f),
+                    ServerState.Simulating or ServerState.Checking => new Color(.95f, .7f, .24f),
+                    _ => new Color(.6f, .62f, .6f)
+                };
+            if (serverText)
+                serverText.text = detail ?? state switch
+                {
+                    ServerState.Online => "Servidor conectado",
+                    ServerState.Offline => "Sin servidor · trace local",
+                    ServerState.Simulating => "Simulando…",
+                    ServerState.Checking => "Conectando…",
+                    _ => "Servidor"
+                };
+        }
+
         public void ShowStatus(string message)
         {
+            if (toast) toast.SetActive(true);
             errorText.gameObject.SetActive(true); errorText.text = message;
         }
+
+        public void ClearError()
+        {
+            errorText.text = ""; errorText.gameObject.SetActive(false);
+            if (toast) toast.SetActive(false);
+        }
+
         public void Render(TraceData trace, PlaybackState state, bool paused, float speed)
         {
-            header.text = $"HARVEST / {trace.Scenario}\nTick {state.Tick} / {trace.TotalTicks} · {(paused ? "Pausa" : "Reproduciendo")} · {speed:g} ticks/s";
-            playLabel.text = paused ? "Reproducir" : "Pausar";
+            if (trace != shownTrace) OnTraceChanged(trace);
+            var world = controller ? controller.worldView : null;
+            if (header) header.text = HudFormat.Subtitle(trace, controller ? controller.TraceLabel : null);
+            if (tickText) tickText.text = $"Tick <b>{state.Tick}</b> / {trace.TotalTicks}  <color={HudFormat.Muted}>{(paused ? "En pausa" : "Reproduciendo")} · {speed:g} ticks/s</color>";
+            if (playLabel) playLabel.text = paused ? "Reproducir" : "Pausar";
+            if (playIcon && playSprite && pauseSprite) playIcon.sprite = paused ? playSprite : pauseSprite;
+            SetInteractable(true);
             playButton.interactable = state.Tick < trace.TotalTicks;
             backButton.interactable = state.Tick > 0;
             forwardButton.interactable = state.Tick < trace.TotalTicks;
-            restartButton.interactable = endButton.interactable = speedDropdown.interactable = true;
-            int speedIndex = System.Array.IndexOf(speeds, speed);
-            if (speedIndex >= 0) speedDropdown.SetValueWithoutNotify(speedIndex);
-            var agents = new StringBuilder("AGENTES\n");
-            foreach (var a in trace.Agents.Values)
+            int speedIndex = System.Array.IndexOf(Speeds, speed);
+            if (speedDropdown && speedIndex >= 0) speedDropdown.SetValueWithoutNotify(speedIndex);
+            if (timeline)
             {
-                var s = state.Agents[a.Id];
-                agents.AppendLine($"{a.Id} ({a.Type})\n{s.Status}\nCarga {s.Load}/{a.Capacity} · ({s.X},{s.Y}) {s.Orientation}\n");
-                if (s.Fuel.HasValue)
-                {
-                    var tank = trace.Json["config"]?["combustible"]?[a.Type == "carro" ? "tanque_carro" : "tanque_cosechadora"];
-                    float capacity = tank == null ? 0 : (float)tank;
-                    int filled = capacity <= 0 ? 0 : Mathf.Clamp(Mathf.RoundToInt(10 * s.Fuel.Value / capacity), 0, 10);
-                    agents.AppendLine($"Combustible {s.Fuel.Value:0.##} L " +
-                                      (capacity > 0 ? $"[{new string('|', filled)}{new string('.', 10 - filled)}] {capacity:0.##} L" : "") + "\n");
-                }
+                updatingTimeline = true;
+                timeline.maxValue = Mathf.Max(1, trace.TotalTicks);
+                timeline.SetValueWithoutNotify(state.Tick);
+                updatingTimeline = false;
             }
-            agentsText.text = agents.ToString();
-            int field = trace.Width * (trace.Height - 1) - ((Newtonsoft.Json.Linq.JArray)trace.World["obstaculos"]).Count;
-            float percent = field == 0 ? 0 : 100f * state.Harvested.Count / field;
-            worldText.text = $"CAMPO Y BODEGA\nCosechadas: {state.Harvested.Count}/{field} ({percent:0.0}%)\nGrano entregado: {state.Delivered}";
-            var events = new StringBuilder("EVENTOS DEL TICK\n");
-            if (state.Events.Count == 0) events.AppendLine("Sin eventos.");
-            foreach (var e in state.Events) events.AppendLine(e.ToString(Formatting.None));
-            events.AppendLine($"\nMENSAJES EN TRÁNSITO ({state.Messages.Count})");
-            foreach (var e in state.Messages.OrderBy(p => p.Key).Select(p => p.Value))
-                events.AppendLine($"#{e["id"]} {e["tipo_mensaje"]} ({e["performativa"]})\n{e["de"]} -> {e["a"]} · entrega t={e["entrega_en"]}");
-            eventsText.text = events.ToString();
-            var metrics = new StringBuilder("RESULTADOS FINALES DEL ARCHIVO\n");
-            foreach (string name in new[] { "tiempo_completacion", "tiempo_ocioso_cosechadora", "porcentaje_ocioso" })
-                if (trace.Metrics[name] != null) metrics.AppendLine(name + ": " + trace.Metrics[name]);
-            if (!trace.Metrics.HasValues) metrics.AppendLine("Sin métricas finales.");
-            metricsText.text = metrics.ToString();
+
+            var followed = world && world.Rig ? world.Rig.FollowTarget : null;
+            var cues = world ? world.Cues : TickCues.From(state.Events);
+            foreach (var card in cards)
+            {
+                if (!trace.Agents.TryGetValue(card.AgentId, out var agent) || !state.Agents.TryGetValue(card.AgentId, out var value)) continue;
+                bool isFollowed = followed && world.Agents.TryGetValue(card.AgentId, out var view) && view.transform == followed;
+                card.Render(value, agent.Capacity, Tank(trace, agent.Type), cues.AlertText(card.AgentId), isFollowed);
+            }
+            if (agentsText) agentsText.text = "";
+
+            int field = world && world.Grid != null ? world.Grid.FieldCellCount
+                : trace.Width * (trace.Height - 1) - ((JArray)trace.World["obstaculos"]).Count;
+            float harvested = field == 0 ? 0 : state.Harvested.Count / (float)field;
+            float expected = trace.Metrics?["grano_esperado_total"] is JValue e && e.Type is JTokenType.Integer or JTokenType.Float ? (float)e : 0;
+            SetFill(harvestFill, harvested);
+            SetFill(deliveredFill, expected > 0 ? Mathf.Clamp01(state.Delivered / expected) : 0);
+            if (worldText)
+            {
+                string transit = state.Messages.Count == 0 ? "" : "\n" + $"<color={HudFormat.Muted}>Mensajes en tránsito ({state.Messages.Count}):</color> " +
+                    string.Join(", ", state.Messages.OrderBy(p => p.Key).Take(4).Select(p => $"{p.Value["tipo_mensaje"]} → {p.Value["a"]}")) +
+                    (state.Messages.Count > 4 ? "…" : "");
+                worldText.text = $"Cosechadas <b>{state.Harvested.Count}</b>/{field} ({harvested * 100:0}%)\n" +
+                                 $"Grano entregado <b>{state.Delivered}</b>" + (expected > 0 ? $"/{expected:0}" : "") + transit;
+            }
+            if (eventsText) eventsText.text = HudFormat.RecentEvents(trace, state.Tick);
         }
+
+        static float Tank(TraceData trace, string type)
+        {
+            var tank = trace.Json["config"]?["combustible"]?[type == "carro" ? "tanque_carro" : "tanque_cosechadora"];
+            return tank is JValue value && value.Type is JTokenType.Integer or JTokenType.Float ? (float)value : 0;
+        }
+
+        static void SetFill(RectTransform fill, float value)
+        {
+            if (!fill) return;
+            fill.anchorMin = Vector2.zero; fill.anchorMax = new Vector2(Mathf.Clamp01(value), 1);
+            fill.offsetMin = fill.offsetMax = Vector2.zero;
+        }
+
+        void OnTraceChanged(TraceData trace)
+        {
+            shownTrace = trace;
+            if (metricsText) metricsText.text = HudFormat.Metrics(trace.Metrics);
+            RebuildCards(trace);
+            BuildMarks(trace);
+            SyncSelectors(trace);
+        }
+
+        /// <summary>Los selectores muestran la corrida cargada, para volver a simularla o cambiar solo un parámetro.</summary>
+        void SyncSelectors(TraceData trace)
+        {
+            static void Select(TMP_Dropdown dropdown, string value)
+            {
+                if (!dropdown || value == null) return;
+                int index = dropdown.options.FindIndex(o => o.text == value);
+                if (index >= 0) dropdown.SetValueWithoutNotify(index);
+            }
+            Select(scenarioDropdown, trace.Scenario);
+            Select(strategyDropdown, HudFormat.StrategyFromLabel(controller ? controller.TraceLabel : null));
+            string seed = trace.Json["meta"]?["seed"]?.ToString();
+            if (seedInput && !string.IsNullOrEmpty(seed)) seedInput.SetTextWithoutNotify(seed);
+        }
+
+        void RebuildCards(TraceData trace)
+        {
+            foreach (var card in cards) if (card) Destroy(card.gameObject);
+            cards.Clear();
+            if (!cardTemplate || !agentCards) return;
+            var world = controller ? controller.worldView : null;
+            foreach (var agent in trace.Agents.Values.OrderBy(a => a.Type == "carro" ? 1 : 0).ThenBy(a => a.Id))
+            {
+                var card = Instantiate(cardTemplate, agentCards);
+                card.gameObject.SetActive(true);
+                var identity = world && world.Agents.TryGetValue(agent.Id, out var view) ? view.Identity : Color.white;
+                card.Setup(agent, identity, Follow);
+                cards.Add(card);
+            }
+        }
+
+        /// <summary>Marcas en la línea de tiempo: restricciones (rojo), depósitos en la bodega (ámbar) y recargas (verde).</summary>
+        void BuildMarks(TraceData trace)
+        {
+            if (!timelineMarks) return;
+            if (marksTexture) Destroy(marksTexture);
+            const int width = 1024;
+            marksTexture = new Texture2D(width, 1, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear, name = "MarcasTiempo" };
+            var pixels = new Color32[width];
+            var priority = new int[width];
+            int total = Mathf.Max(1, trace.TotalTicks);
+            foreach (var pair in trace.Changes)
+                foreach (var token in pair.Value)
+                {
+                    string type = (string)token["tipo"];
+                    int rank = type switch { "RESTRICCION" => 3, "DEPOSITO" => 2, "RECARGA" => 1, _ => 0 };
+                    if (rank == 0) continue;
+                    int x = Mathf.Clamp(Mathf.RoundToInt(pair.Key / (float)total * (width - 1)), 0, width - 1);
+                    if (rank <= priority[x]) continue;
+                    priority[x] = rank;
+                    pixels[x] = rank switch { 3 => new Color32(255, 110, 90, 255), 2 => new Color32(242, 179, 61, 255), _ => new Color32(110, 210, 130, 200) };
+                }
+            marksTexture.SetPixels32(pixels);
+            marksTexture.Apply(false, false);
+            timelineMarks.texture = marksTexture;
+        }
+
+        void Follow(string id)
+        {
+            if (controller && controller.worldView) controller.worldView.FollowAgent(id);
+            if (controller && controller.Playback != null) Render(controller.Trace, controller.Playback.State, controller.Paused, controller.Speed);
+        }
+
+        /// <summary>Botón "Seguir": recorre los agentes en el orden de las tarjetas.</summary>
+        void FollowNext()
+        {
+            if (cards.Count == 0 || !controller || !controller.worldView) return;
+            var world = controller.worldView;
+            var followed = world.Rig ? world.Rig.FollowTarget : null;
+            int current = cards.FindIndex(c => world.Agents.TryGetValue(c.AgentId, out var v) && v.transform == followed);
+            Follow(cards[(current + 1) % cards.Count].AgentId);
+        }
+
+        public void ShowTooltip(string text, RectTransform target)
+        {
+            if (!tooltip || !tooltipText || string.IsNullOrEmpty(text)) return;
+            tooltipText.text = text;
+            tooltip.gameObject.SetActive(true);
+            tooltip.SetAsLastSibling();
+            var corners = new Vector3[4];
+            target.GetWorldCorners(corners);
+            var canvas = tooltip.GetComponentInParent<Canvas>();
+            float scale = canvas ? canvas.scaleFactor : 1;
+            // Sobre el botón si hay espacio; si no (barra superior), debajo.
+            bool below = corners[1].y + 40 * scale > Screen.height;
+            tooltip.pivot = new Vector2(.5f, below ? 1 : 0);
+            var anchor = below ? (corners[0] + corners[3]) / 2 + Vector3.down * 6 * scale : (corners[1] + corners[2]) / 2 + Vector3.up * 6 * scale;
+            tooltip.anchoredPosition = anchor / scale;
+        }
+
+        public void HideTooltip() { if (tooltip) tooltip.gameObject.SetActive(false); }
+
+        void SetPanel(bool open)
+        {
+            if (bottomBar && sidePanel)
+            {
+                float panelSpace = sidePanel.rect.width + 2 * Mathf.Abs(sidePanel.offsetMax.x);
+                bottomBar.offsetMax = new Vector2(open ? -panelSpace : -Mathf.Abs(sidePanel.offsetMax.x), bottomBar.offsetMax.y);
+            }
+            if (toast) ((RectTransform)toast.transform).anchoredPosition = new Vector2(open && sidePanel ? -sidePanel.rect.width / 2 : 0,
+                ((RectTransform)toast.transform).anchoredPosition.y);
+            if (sidePanel) sidePanel.gameObject.SetActive(open);
+            if (panelOpenButton) panelOpenButton.gameObject.SetActive(!open);
+            lastInsets = new Vector4(-1, -1, -1, -1);
+        }
+
+        void SetInteractable(bool value)
+        {
+            foreach (var button in new[] { playButton, backButton, forwardButton, restartButton, endButton })
+                if (button) button.interactable = value;
+            if (speedDropdown) speedDropdown.interactable = value;
+            if (timeline) timeline.interactable = value;
+        }
+
         public void ShowError(string message)
         {
-            errorText.gameObject.SetActive(true); errorText.text = message;
-            header.text = "No se pudo cargar el trace";
-            agentsText.text = worldText.text = eventsText.text = metricsText.text = "";
-            foreach (var button in new[] { playButton, backButton, forwardButton, restartButton, endButton }) button.interactable = false;
-            speedDropdown.interactable = false;
+            ShowStatus(message);
+            if (header) header.text = "No se pudo cargar el trace";
+            if (tickText) tickText.text = "";
+            foreach (var text in new[] { agentsText, worldText, eventsText, metricsText }) if (text) text.text = "";
+            foreach (var card in cards) if (card) Destroy(card.gameObject);
+            cards.Clear(); shownTrace = null;
+            SetFill(harvestFill, 0); SetFill(deliveredFill, 0);
+            SetInteractable(false);
         }
-        public void ClearError() { errorText.text = ""; errorText.gameObject.SetActive(false); }
+
+        void Update()
+        {
+            if (!controller || controller.Playback == null || UiFocus.Typing) return;
+            var keyboard = Keyboard.current;
+            if (keyboard == null) return;
+            if (keyboard.spaceKey.wasPressedThisFrame) controller.PlayPause();
+            else if (keyboard.periodKey.wasPressedThisFrame) controller.StepForward();
+            else if (keyboard.commaKey.wasPressedThisFrame) controller.StepBackward();
+            else if (keyboard.homeKey.wasPressedThisFrame) controller.Restart();
+            else if (keyboard.endKey.wasPressedThisFrame) controller.GoToEnd();
+        }
+
+        void LateUpdate()
+        {
+            // La cámara encuadra el campo en el área libre que dejan las barras y el panel.
+            var rig = controller && controller.worldView ? controller.worldView.Rig : null;
+            if (!rig || Screen.width <= 0 || Screen.height <= 0) return;
+            var insets = CameraInsets();
+            if ((insets - lastInsets).sqrMagnitude < 1e-6f) return;
+            bool first = lastInsets.x < 0;
+            lastInsets = insets;
+            rig.overlayInsets = insets;
+            if (first) rig.Frame();
+        }
+
+        /// <summary>Fracción de pantalla que tapan las barras y el panel (izquierda, derecha, arriba, abajo).</summary>
+        public Vector4 CameraInsets()
+        {
+            var canvas = GetComponentInParent<Canvas>();
+            var eye = canvas && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+            float width = eye ? eye.pixelWidth : Screen.width, height = eye ? eye.pixelHeight : Screen.height;
+            if (width <= 0 || height <= 0) return Vector4.zero;
+            float Edge(RectTransform rect, int corner, bool horizontal)
+            {
+                var corners = new Vector3[4];
+                rect.GetWorldCorners(corners);
+                var point = RectTransformUtility.WorldToScreenPoint(eye, corners[corner]);
+                return horizontal ? point.x : point.y;
+            }
+            float top = topBar && topBar.gameObject.activeInHierarchy ? Mathf.Clamp01((height - Edge(topBar, 0, false)) / height) : 0;
+            float bottom = bottomBar && bottomBar.gameObject.activeInHierarchy ? Mathf.Clamp01(Edge(bottomBar, 1, false) / height) : 0;
+            float right = sidePanel && sidePanel.gameObject.activeInHierarchy ? Mathf.Clamp01((width - Edge(sidePanel, 0, true)) / width) : 0;
+            return new Vector4(0, right, top, bottom);
+        }
     }
 }

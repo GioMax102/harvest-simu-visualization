@@ -1,216 +1,192 @@
 using System;
 using System.Collections.Generic;
-using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace HarvestSim.Visualization
 {
+    /// <summary>
+    /// Orquesta la vista realista: suelo, paisaje, maíz, vehículos, arcos de la subasta y cámara.
+    /// Solo lee <see cref="PlaybackState"/>: el estado lógico cambia en <see cref="Render"/> (un tick) y
+    /// <see cref="Interpolate"/> mueve únicamente lo visual entre dos ticks.
+    /// </summary>
     public sealed class WorldView : MonoBehaviour
     {
         public Transform cellsRoot, structuresRoot, agentsRoot;
         public Camera mapCamera;
-        public GameObject cellPrefab;
-        public AgentView harvesterPrefab, cartPrefab;
-        public Material cropMaterial, harvestedMaterial, serviceMaterial, structureMaterial, obstacleMaterial;
-        readonly Dictionary<(int x, int y), Renderer> cells = new();
-        readonly Dictionary<string, AgentView> agents = new();
-        readonly Dictionary<(string from, string to), LineRenderer> lines = new();
-        TraceData trace;
-        Material lineMaterial;
-        int maxYield;
-        bool perspective;
-        float yaw = 35, pitch = 55, zoom = 1;
+        public HarvestArt art;
 
-        void Start()
-        {
-            Light sun = null;
-            foreach (var light in FindObjectsByType<Light>(FindObjectsSortMode.None))
-                if (light.type == LightType.Directional && light.enabled) { sun = light; break; }
-            if (!sun)
-            {
-                sun = new GameObject("Harvest sunlight").AddComponent<Light>();
-                sun.transform.SetParent(transform, false);
-                sun.type = LightType.Directional;
-                sun.transform.rotation = Quaternion.Euler(60, -30, 0);
-            }
-            if (sun.shadows == LightShadows.None)
-            {
-                sun.shadows = LightShadows.Soft;
-                sun.shadowStrength = .65f;
-            }
-        }
+        public FieldGrid Grid { get; private set; }
+        public CornField Corn { get; private set; }
+        public GroundBuilder Ground { get; private set; }
+        public SceneryBuilder Scenery { get; private set; }
+        public CoordinationArcs Arcs { get; private set; }
+        public CameraRig Rig { get; private set; }
+        public IReadOnlyDictionary<string, AgentView> Agents => agents;
+        public TickCues Cues { get; private set; } = new();
+
+        static readonly float[] HarvesterHues = { .11f, .02f, .86f, .16f, .95f, .07f };
+        static readonly float[] CartHues = { .56f, .47f, .70f, .52f, .62f, .44f };
+
+        readonly Dictionary<string, AgentView> agents = new();
+        TraceData trace;
+        TickCues nextCues;
+        int nextCuesTick = -1;
 
         public void Build(TraceData data)
         {
-            if (!cellsRoot || !structuresRoot || !agentsRoot || !mapCamera || !cellPrefab || !harvesterPrefab || !cartPrefab ||
-                !cropMaterial || !harvestedMaterial || !serviceMaterial || !structureMaterial || !obstacleMaterial)
-                throw new InvalidOperationException("WorldView: faltan raíces, cámara, prefabs o materiales. Genera la escena desde Harvest Sim.");
+            if (!cellsRoot || !structuresRoot || !agentsRoot || !mapCamera || !art || !art.harvesterPrefab || !art.cartPrefab)
+                throw new InvalidOperationException("WorldView: faltan raíces, cámara o el arte (HarvestArt). Ejecuta Harvest Sim > Actualizar escena.");
             Clear(); trace = data;
-            if (trace.World["rendimiento"] is JArray rendimiento)
-                foreach (JArray row in rendimiento)
-                    foreach (var value in row) maxYield = Mathf.Max(maxYield, (int)value);
-            for (int y = 0; y < trace.Height; y++)
-                for (int x = 0; x < trace.Width; x++)
-                {
-                    var cell = Instantiate(cellPrefab, cellsRoot);
-                    cell.name = $"Cell_{x}_{y}";
-                    cell.transform.localPosition = CellToWorld(x, y, -0.05f);
-                    cells.Add((x, y), cell.GetComponent<Renderer>());
-                }
-            foreach (JProperty home in ((JObject)trace.World["bases"]).Properties())
-                Structure("Base_" + home.Name, home.Value, PrimitiveType.Cylinder, new Vector3(.8f, .025f, .8f), .025f, structureMaterial);
-            Structure("Bodega_B", trace.World["bodega"], PrimitiveType.Cube, new Vector3(.8f, .12f, .8f), .06f, structureMaterial);
-            var label = new GameObject("B").AddComponent<TextMesh>();
-            label.transform.SetParent(structuresRoot, false);
-            label.transform.localPosition = CellToWorld((int)trace.World["bodega"][0], (int)trace.World["bodega"][1], .14f);
-            label.transform.localRotation = Quaternion.Euler(90, 0, 0);
-            label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            label.GetComponent<Renderer>().sharedMaterial = label.font.material;
-            label.text = "B"; label.anchor = TextAnchor.MiddleCenter; label.fontSize = 48; label.characterSize = .12f; label.color = Color.white;
-            foreach (var obstacle in (JArray)trace.World["obstaculos"])
-                Structure("Obstaculo", obstacle, PrimitiveType.Cube, new Vector3(.9f, .6f, .9f), .3f, obstacleMaterial);
+            Grid = FieldGrid.FromTrace(data, data.World["tamano_celda_m"] == null ? art.cellSize : null);
+
+            Ground = new GroundBuilder();
+            Ground.Build(Grid, art, cellsRoot);
+            var cornObject = new GameObject("Maiz");
+            cornObject.transform.SetParent(cellsRoot, false);
+            Corn = cornObject.AddComponent<CornField>();
+            Corn.Build(Grid, data, art.cornMaterial, art.canopyMaterial);
+
+            Scenery = new SceneryBuilder();
+            Scenery.Build(Grid, art, structuresRoot);
+            Arcs = new CoordinationArcs();
+            Arcs.Build(structuresRoot, art.lineMaterial, Grid.CellSize);
+
             var variants = new Dictionary<string, int>();
-            foreach (var a in trace.Agents.Values)
+            foreach (var a in data.Agents.Values)
             {
-                var view = Instantiate(a.Type == "carro" ? cartPrefab : harvesterPrefab, agentsRoot);
+                bool cart = a.Type == "carro";
+                var view = Instantiate(cart ? art.cartPrefab : art.harvesterPrefab, agentsRoot);
                 variants.TryGetValue(a.Type, out int variant);
-                view.Initialize(a, variant); agents.Add(a.Id, view);
+                var hues = cart ? CartHues : HarvesterHues;
+                var identity = Color.HSVToRGB(hues[variant % hues.Length], .78f, .97f);
+                view.Initialize(a, identity, art, Grid.CellSize, mapCamera);
+                agents.Add(a.Id, view);
                 variants[a.Type] = variant + 1;
             }
-            var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader) lineMaterial = new Material(shader);
-            FrameCamera(mapCamera);
+
+            Rig = mapCamera.GetComponent<CameraRig>();
+            if (!Rig) Rig = mapCamera.gameObject.AddComponent<CameraRig>();
+            Rig.minDistance = Grid.CellSize;
+            Rig.SetArea(Grid.WorldBounds, reset: true);
         }
-        void Structure(string name, JToken cell, PrimitiveType type, Vector3 scale, float height, Material material)
-        {
-            var go = GameObject.CreatePrimitive(type);
-            go.name = name; go.transform.SetParent(structuresRoot, false);
-            go.transform.localPosition = CellToWorld((int)cell[0], (int)cell[1], height);
-            go.transform.localScale = scale;
-            go.GetComponent<Renderer>().sharedMaterial = material;
-            var collider = go.GetComponent<Collider>(); collider.enabled = false;
-            if (Application.isPlaying) Destroy(collider); else DestroyImmediate(collider);
-        }
+
         public void Render(PlaybackState state)
         {
-            foreach (var cell in cells)
+            if (trace == null) return;
+            Cues = TickCues.From(state.Events);
+            Ground.Render(state.Harvested);
+            Corn.Render(state);
+            foreach (var pair in agents)
             {
-                cell.Value.sharedMaterial = cell.Key.y == 0 ? serviceMaterial : state.Harvested.Contains(cell.Key) ? harvestedMaterial : cropMaterial;
-                var properties = new MaterialPropertyBlock();
-                if (cell.Key.y > 0 && !state.Harvested.Contains(cell.Key) && maxYield > 0 && trace.World["rendimiento"] is JArray rendimiento)
-                {
-                    float ratio = (int)rendimiento[cell.Key.y][cell.Key.x] / (float)maxYield;
-                    properties.SetColor("_BaseColor", Color.Lerp(new Color(.86f, .74f, .34f), new Color(.55f, .38f, .08f), ratio * .65f));
-                }
-                cell.Value.SetPropertyBlock(properties);
+                var value = state.Agents[pair.Key];
+                Cues.Proposals.TryGetValue(pair.Key, out string proposal);
+                pair.Value.Render(value, VehicleMotion.At(Grid, value), Cues.AlertText(pair.Key), proposal);
             }
-            var alerts = new Dictionary<string, string>();
-            var proposals = new Dictionary<string, string>();
-            foreach (JObject e in state.Events)
-            {
-                string type = (string)e["tipo"];
-                if (type == "RECARGA" || type == "RESTRICCION")
-                {
-                    string id = (string)e["agente"];
-                    string alert = type == "RECARGA" ? "RECARGA" : "RESTRICCION: " + (string)e["regla"];
-                    alerts.TryGetValue(id, out string previous);
-                    alerts[id] = previous == null ? alert : previous + "\n" + alert;
-                }
-                if (type == "MENSAJE_ENVIADO" && (string)e["tipo_mensaje"] == "PROPUESTA")
-                    proposals[(string)e["de"]] = e["payload"]?["costo"]?.ToString();
-            }
-            foreach (var agent in agents)
-            {
-                var value = state.Agents[agent.Key];
-                alerts.TryGetValue(agent.Key, out string alert);
-                proposals.TryGetValue(agent.Key, out string proposal);
-                agent.Value.Render(value, CellToWorld(value.X, value.Y, .4f), alert, proposal);
-            }
-            foreach (var line in lines.Values) line.gameObject.SetActive(false);
-            foreach (JObject e in state.Events)
-                if ((string)e["tipo"] == "MENSAJE_ENVIADO" && (string)e["tipo_mensaje"] == "SOLICITUD_SERVICIO")
-                    ShowLine((string)e["de"], (string)e["a"], new Color(.3f, .55f, .9f));
-            foreach (var winner in state.Winners)
-                ShowLine(winner.Key, winner.Value, new Color(1f, .65f, .1f));
-            FrameCamera(mapCamera);
+            Arcs.Render(Cues, state, agents);
         }
-        void ShowLine(string from, string to, Color color)
-        {
-            if (!lineMaterial || !agents.ContainsKey(from) || !agents.ContainsKey(to)) return;
-            var key = (from, to);
-            if (!lines.TryGetValue(key, out var line))
-            {
-                var go = new GameObject("Coordinacion_" + key);
-                go.transform.SetParent(structuresRoot, false);
-                line = go.AddComponent<LineRenderer>();
-                line.material = lineMaterial; line.positionCount = 2; line.startWidth = line.endWidth = .045f;
-                lines.Add(key, line);
-            }
-            var source = agents[from].transform.position;
-            var target = agents[to].transform.position;
-            line.SetPosition(0, source + Vector3.up * .45f);
-            line.SetPosition(1, target + Vector3.up * .45f);
-            line.startColor = line.endColor = color;
-            line.gameObject.SetActive(true);
-        }
-        public Vector3 CellToWorld(int x, int y, float height) => new Vector3(x, height, -y);
+
+        /// <summary>Pose visual entre el tick actual y el siguiente. No cambia cargas, cosecha ni estados.</summary>
         public void Interpolate(PlaybackState current, PlaybackState next, float fraction)
         {
-            foreach (var agent in agents)
+            if (trace == null) return;
+            fraction = Mathf.Clamp01(fraction);
+            var poses = new Dictionary<string, VehiclePose>();
+            foreach (var pair in agents)
             {
-                var from = current.Agents[agent.Key];
-                var to = next.Agents[agent.Key];
-                agent.Value.Interpolate(from, to, CellToWorld(from.X, from.Y, .4f), CellToWorld(to.X, to.Y, .4f), fraction);
+                var pose = VehicleMotion.Sample(Grid, current.Agents[pair.Key], next.Agents[pair.Key], fraction);
+                pair.Value.SetPose(pose);
+                poses[pair.Key] = pose;
             }
-            foreach (var pair in lines)
-            {
-                if (!pair.Value.gameObject.activeSelf) continue;
-                pair.Value.SetPosition(0, agents[pair.Key.from].transform.position + Vector3.up * .45f);
-                pair.Value.SetPosition(1, agents[pair.Key.to].transform.position + Vector3.up * .45f);
-            }
+            if (nextCuesTick != next.Tick) { nextCues = TickCues.From(next.Events); nextCuesTick = next.Tick; }
+            Corn.ClearCuts();
+            if (next.Tick == current.Tick + 1)
+                foreach (var cut in nextCues.HarvestedBy)
+                {
+                    if (current.Harvested.Contains(cut.Key) || cut.Value == null || !poses.TryGetValue(cut.Value, out var pose)) continue;
+                    var forward = FieldGrid.Forward(pose.Heading);
+                    Corn.SetCut(new Vector2Int(cut.Key.x, cut.Key.y), pose.Position + forward * Grid.CellSize * .55f, forward);
+                }
+            Arcs.Follow(agents);
         }
-        public void SetPerspective() { perspective = true; FrameCamera(mapCamera); }
-        public void ResetCamera() { perspective = false; yaw = 35; pitch = 55; zoom = 1; FrameCamera(mapCamera); }
+
+        public Vector3 CellToWorld(int x, int y, float height) =>
+            Grid != null ? Grid.CellToWorld(x, y, height) : new Vector3(x * art.cellSize, height, -y * art.cellSize);
+
+        public void SetPerspective()
+        {
+            if (!Rig) return;
+            Rig.SetMode(CameraMode.Orbit);
+            Rig.Frame(snap: true);
+        }
+
+        public void ResetCamera() { if (Rig) Rig.ResetView(CameraMode.Top); }
+
+        public void FollowAgent(string id)
+        {
+            if (Rig && agents.TryGetValue(id, out var view)) Rig.SetMode(CameraMode.Follow, view.transform);
+        }
+
+        /// <summary>Clic izquierdo sobre un vehículo (fuera del HUD): la cámara lo sigue.</summary>
         void Update()
         {
+            if (!Application.isPlaying || trace == null || !Rig || !mapCamera) return;
             var mouse = Mouse.current;
-            if (mouse == null || !mapCamera || !mapCamera.pixelRect.Contains(mouse.position.ReadValue())) return;
-            if (mouse.scroll.ReadValue().y != 0)
+            if (mouse == null || !mouse.leftButton.wasPressedThisFrame || UiFocus.PointerOverUi) return;
+            var ray = mapCamera.ScreenPointToRay(mouse.position.ReadValue());
+            AgentView best = null;
+            float bestDistance = Grid.CellSize * .55f;
+            foreach (var view in agents.Values)
             {
-                zoom = Mathf.Clamp(zoom * (mouse.scroll.ReadValue().y > 0 ? .9f : 1.1f), .35f, 4f);
-                FrameCamera(mapCamera);
+                var center = view.transform.position + Vector3.up * 2;
+                float distance = Vector3.Cross(ray.direction, center - ray.origin).magnitude;
+                if (distance < bestDistance) { best = view; bestDistance = distance; }
             }
-            if (perspective && mouse.rightButton.isPressed)
+            if (best) FollowAgent(best.AgentId);
+        }
+
+        /// <summary>Despeja placas que se enciman en pantalla: la de más abajo se queda y las demás suben.</summary>
+        void LateUpdate()
+        {
+            if (trace == null || !mapCamera || agents.Count < 2) return;
+            var items = new List<(AgentView view, Vector3 screen, float metersPerPixel)>();
+            foreach (var view in agents.Values)
             {
-                var delta = mouse.delta.ReadValue();
-                yaw += delta.x * .3f; pitch = Mathf.Clamp(pitch - delta.y * .3f, 20, 85);
-                FrameCamera(mapCamera);
+                if (!view.Label) continue;
+                var anchor = view.LabelAnchor;
+                var screen = mapCamera.WorldToScreenPoint(anchor);
+                if (screen.z <= 0) { view.SetLabelOffset(Vector3.zero); continue; }
+                float metersPerPixel = mapCamera.orthographic
+                    ? 2 * mapCamera.orthographicSize / Mathf.Max(1, mapCamera.pixelHeight)
+                    : 2 * screen.z * Mathf.Tan(mapCamera.fieldOfView * Mathf.Deg2Rad / 2) / Mathf.Max(1, mapCamera.pixelHeight);
+                items.Add((view, screen, metersPerPixel));
+            }
+            items.Sort((a, b) => a.screen.y.CompareTo(b.screen.y));
+            var placed = new List<(float x, float y, float width, float height)>();
+            foreach (var (view, screen, metersPerPixel) in items)
+            {
+                var size = view.Label.GetRenderedValues(false);
+                float scale = view.Label.transform.lossyScale.x / Mathf.Max(1e-5f, metersPerPixel);
+                float width = Mathf.Max(60, size.x * scale), height = Mathf.Max(20, size.y * scale);
+                float y = screen.y;
+                bool moved = true;
+                for (int guard = 0; moved && guard < 8; guard++)
+                {
+                    moved = false;
+                    foreach (var other in placed)
+                        if (Mathf.Abs(screen.x - other.x) < (width + other.width) / 2 && y < other.y + other.height && y + height > other.y)
+                        { y = other.y + other.height + 2; moved = true; }
+                }
+                placed.Add((screen.x, y, width, height));
+                view.SetLabelOffset(mapCamera.transform.up * ((y - screen.y) * metersPerPixel));
             }
         }
+
         public void FrameCamera(Camera camera)
         {
-            if (trace == null || !camera) return;
-            var center = new Vector3((trace.Width - 1) / 2f, 0, -(trace.Height - 1) / 2f);
-            camera.orthographic = !perspective;
-            if (perspective)
-            {
-                camera.fieldOfView = 60;
-                float radius = new Vector2(trace.Width / 2f + .7f, trace.Height / 2f + .7f).magnitude;
-                float verticalHalfFov = camera.fieldOfView * Mathf.Deg2Rad / 2;
-                float horizontalHalfFov = Mathf.Atan(Mathf.Tan(verticalHalfFov) * Mathf.Max(.1f, camera.aspect));
-                float distance = radius / Mathf.Sin(Mathf.Min(verticalHalfFov, horizontalHalfFov)) * zoom;
-                camera.farClipPlane = Mathf.Max(camera.farClipPlane, distance + radius + 1);
-                camera.transform.position = center + Quaternion.Euler(pitch, yaw, 0) * Vector3.back * distance;
-                camera.transform.LookAt(center);
-            }
-            else
-            {
-                camera.transform.position = center + Vector3.up * 20;
-                camera.transform.rotation = Quaternion.Euler(90, 0, 0);
-                camera.orthographicSize = Mathf.Max(trace.Height / 2f + .7f, (trace.Width / 2f + .7f) / Mathf.Max(.1f, camera.aspect)) * zoom;
-            }
+            if (Rig && camera == mapCamera) Rig.Frame(snap: true);
         }
+
         public void Clear()
         {
             foreach (var root in new[] { cellsRoot, structuresRoot, agentsRoot })
@@ -223,12 +199,11 @@ namespace HarvestSim.Visualization
                     if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
                 }
             }
-            cells.Clear(); agents.Clear(); lines.Clear(); trace = null; maxYield = 0;
-            if (lineMaterial)
-            {
-                if (Application.isPlaying) Destroy(lineMaterial); else DestroyImmediate(lineMaterial);
-                lineMaterial = null;
-            }
+            Ground?.Destroy(); Scenery?.Destroy(); Arcs?.Clear();
+            Ground = null; Scenery = null; Arcs = null; Corn = null; Grid = null;
+            agents.Clear(); trace = null; nextCues = null; nextCuesTick = -1; Cues = new TickCues();
         }
+
+        void OnDestroy() { Ground?.Destroy(); Scenery?.Destroy(); }
     }
 }

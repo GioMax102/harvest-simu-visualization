@@ -34,7 +34,7 @@ namespace HarvestSim.Tests
                 {
                     var view = controller.worldView.agentsRoot.Find(agent.Id);
                     Assert.That(view, Is.Not.Null);
-                    var expected = agent.Type == "carro" ? controller.worldView.cartPrefab : controller.worldView.harvesterPrefab;
+                    var expected = agent.Type == "carro" ? controller.worldView.art.cartPrefab : controller.worldView.art.harvesterPrefab;
                     Assert.That(view.Find("Body").GetComponent<MeshFilter>().sharedMesh,
                         Is.EqualTo(expected.transform.Find("Body").GetComponent<MeshFilter>().sharedMesh));
                 }
@@ -60,9 +60,10 @@ namespace HarvestSim.Tests
                 Assert.That(mesh.vertexCount, Is.GreaterThan(1000));
                 Assert.That(renderer.sharedMaterials.Select(m => m.name), Does.Contain("HarvestGreen"));
                 Assert.That(renderer.sharedMaterials.Select(m => m.name), Does.Contain("HarvestYellow"));
-                Assert.That(renderer.bounds.size.x, Is.LessThanOrEqualTo(1f));
-                Assert.That(renderer.bounds.size.z, Is.LessThanOrEqualTo(1f));
-                Assert.That(renderer.bounds.min.y, Is.GreaterThanOrEqualTo(-.02f));
+                float cell = controller.worldView.Grid.CellSize;
+                Assert.That(renderer.bounds.size.x, Is.LessThanOrEqualTo(cell));
+                Assert.That(renderer.bounds.size.z, Is.LessThanOrEqualTo(cell));
+                Assert.That(renderer.bounds.min.y, Is.GreaterThanOrEqualTo(-.02f * cell));
                 Assert.That(agent.GetComponentInChildren<Collider>(), Is.Null);
             }
         }
