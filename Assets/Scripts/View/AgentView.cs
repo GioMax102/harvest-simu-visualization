@@ -13,7 +13,7 @@ namespace HarvestSim.Visualization
             agentId = agent.Id; gameObject.name = agent.Id;
             var text = new GameObject("AgentLabel");
             text.transform.SetParent(transform, false);
-            text.transform.localPosition = new Vector3(0, .9f, .38f);
+            text.transform.localPosition = new Vector3(0, .9f, .5f);
             text.transform.localRotation = Quaternion.Euler(90, 0, 0);
             label = text.AddComponent<TextMesh>();
             label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -25,10 +25,15 @@ namespace HarvestSim.Visualization
             bodyRenderer = transform.Find("Body")?.GetComponent<Renderer>();
             if (bodyRenderer)
             {
-                var tint = Color.HSVToRGB(((agent.Type == "carro" ? .58f : .32f) + variant * .06f) % 1f, .72f, .8f);
-                var properties = new MaterialPropertyBlock();
-                properties.SetColor("_BaseColor", tint);
-                bodyRenderer.SetPropertyBlock(properties);
+                var materials = bodyRenderer.sharedMaterials;
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    if (!materials[i] || materials[i].name != "HarvestGreen") continue;
+                    var tint = Color.HSVToRGB(agent.Type == "carro" ? .30f : .33f, .82f, .48f + .04f * (variant % 5));
+                    var properties = new MaterialPropertyBlock();
+                    properties.SetColor("_BaseColor", tint);
+                    bodyRenderer.SetPropertyBlock(properties, i);
+                }
             }
         }
         public void Render(AgentState state, Vector3 position, string alert = null, string proposal = null)
@@ -57,7 +62,7 @@ namespace HarvestSim.Visualization
         }
         void PositionLabel()
         {
-            label.transform.position = transform.position + new Vector3(0, .9f, .38f);
+            label.transform.position = transform.position + new Vector3(0, .9f, .5f);
             label.transform.rotation = Quaternion.Euler(90, 0, 0);
         }
         void Update()

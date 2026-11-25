@@ -172,8 +172,8 @@ namespace HarvestSim.Tests
                 Assert.That(agent.Find("AgentLabel").GetComponent<Renderer>().bounds.min.z,
                     Is.GreaterThan(agent.Find("Body").GetComponent<Renderer>().bounds.max.z));
             controller.worldView.Interpolate(controller.Playback.State, controller.Playback.State, .5f);
-            Assert.That(cartLabel.transform.position.z - cart.position.z, Is.EqualTo(.38f).Within(.001f));
-            Assert.That(harvesterLabel.transform.position.z - harvester.position.z, Is.EqualTo(.38f).Within(.001f));
+            Assert.That(cartLabel.transform.position.z - cart.position.z, Is.EqualTo(.5f).Within(.001f));
+            Assert.That(harvesterLabel.transform.position.z - harvester.position.z, Is.EqualTo(.5f).Within(.001f));
         }
 
         [UnityTest]

@@ -1,0 +1,8 @@
+Los modelos de esta carpeta son adaptaciones no oficiales con colores inspirados en John Deere. No son productos oficiales ni reproducen el logotipo de la marca.
+
+Fuentes originales publicadas bajo CC0 1.0 (dominio público):
+- Cosechadora: https://grab3d.com/models/vehicles/combine-harvester/
+- Tractor: https://grab3d.com/models/vehicles/tractor/
+- Remolque: https://grab3d.com/models/vehicles/farm-trailer/
+
+Los modelos se han recoloreado, combinado en el caso del tractor con remolque y ajustado a la escala de una celda para su visualización en la simulación.
