@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!28 &2800000
+Texture2D:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: CornPalette
+  m_ImageContentsHash:
+    serializedVersion: 2
+    Hash: 00000000000000000000000000000000
+  m_IsAlphaChannelOptional: 0
+  serializedVersion: 4
+  m_Width: 8
+  m_Height: 8
+  m_CompleteImageSize: 256
+  m_MipsStripped: 0
+  m_TextureFormat: 4
+  m_MipCount: 1
+  m_IsReadable: 1
+  m_IsPreProcessed: 0
+  m_IgnoreMipmapLimit: 1
+  m_MipmapLimitGroupName: 
+  m_StreamingMipmaps: 0
+  m_StreamingMipmapsPriority: 0
+  m_VTOnly: 0
+  m_AlphaIsTransparency: 0
+  m_ImageCount: 1
+  m_TextureDimension: 2
+  m_TextureSettings:
+    serializedVersion: 2
+    m_FilterMode: 1
+    m_Aniso: 1
+    m_MipBias: 0
+    m_WrapU: 1
+    m_WrapV: 1
+    m_WrapW: 1
+  m_LightmapFormat: 0
+  m_ColorSpace: 1
+  m_PlatformBlob: 
+  image data: 256
+  _typelessdata: 564731ff52452fff4c4328ff4b3f2bff483c29ff463825ff413625ff3e3323ffb79d6dffaf9768ffa3935affa18a5fff99845bff957b52ff8b7752ff83714eff958159ff8f7b55ff847949ff83714eff7d6c4aff796543ff716243ff6b5c40ffd9c295ffd0ba8fffc2b67bffbfab83ffb6a37dffb19871ffa59371ff9c8c6bffead09affe1c894ffd1c480ffceb788ffc5af81ffbfa375ffb29e75ffa8966fff9d784dff97734aff8c7140ff8a6944ff846541ff805e3bff775b3bff715637ffa68f67ff9f8963ff948655ff927e5aff8b7856ff87704eff7e6c4eff77674aff8f7b56ff897652ff7f7347ff7e6c4bff786748ff746041ff6c5d41ff67583eff
+  m_StreamData:
+    serializedVersion: 2
+    offset: 0
+    size: 0
+    path: 

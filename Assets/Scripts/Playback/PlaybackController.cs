@@ -12,6 +12,8 @@ namespace HarvestSim.Visualization
         public string serverUrl = "http://127.0.0.1:8000";
         public TraceData Trace { get; private set; }
         public TracePlayback Playback { get; private set; }
+        /// <summary>Nombre de la corrida cargada: "escenario__estrategia__seedN" (servidor o archivo exportado) o el nombre del archivo.</summary>
+        public string TraceLabel { get; private set; }
         TracePlayback preview;
         public bool Paused { get; private set; } = true;
         public float Speed { get; private set; } = 8;
@@ -33,7 +35,7 @@ namespace HarvestSim.Visualization
 
         public void LoadTraceJson(string json, string label = "trace")
         {
-            Paused = true; accumulated = 0; Playback = null; preview = null; Trace = null;
+            Paused = true; accumulated = 0; Playback = null; preview = null; Trace = null; TraceLabel = label;
             if (worldView) worldView.Clear();
             try
             {
@@ -65,6 +67,8 @@ namespace HarvestSim.Visualization
         public void StepBackward() => MoveTo(Playback == null ? 0 : Playback.State.Tick - 1);
         public void Restart() => MoveTo(0);
         public void GoToEnd() => MoveTo(Trace?.TotalTicks ?? 0);
+        /// <summary>Salta a un tick (línea de tiempo del HUD). Pausa la reproducción.</summary>
+        public void SeekTo(int tick) => MoveTo(tick);
         void MoveTo(int tick)
         {
             if (Playback == null) return;

@@ -94,14 +94,7 @@ namespace HarvestSim.Editor
                 cameraObject.transform.SetParent(root.transform, false);
                 preview.mapCamera = cameraObject.GetComponent<Camera>();
                 preview.mapCamera.enabled = false;
-                preview.cellPrefab = source.cellPrefab;
-                preview.harvesterPrefab = source.harvesterPrefab;
-                preview.cartPrefab = source.cartPrefab;
-                preview.cropMaterial = source.cropMaterial;
-                preview.harvestedMaterial = source.harvestedMaterial;
-                preview.serviceMaterial = source.serviceMaterial;
-                preview.structureMaterial = source.structureMaterial;
-                preview.obstacleMaterial = source.obstacleMaterial;
+                preview.art = source.art;
                 preview.Build(data);
                 preview.Render(new TracePlayback(data).State);
                 foreach (var child in root.GetComponentsInChildren<Transform>(true))

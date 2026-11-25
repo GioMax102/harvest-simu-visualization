@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a796cf5c9b1e5a4db68192aff48abdd, type: 3}
+  m_Name: HarvestArt
+  m_EditorClassIdentifier: HarvestSim.Visualization::HarvestSim.Visualization.HarvestArt
+  cellSize: 12
+  marginCells: 6
+  soilMaterial: {fileID: 2100000, guid: c19d735c5e6436044aa311cfdc4a34f9, type: 2}
+  stubbleMaterial: {fileID: 2100000, guid: 4a342aa444e86f94997080f1b2665f24, type: 2}
+  roadMaterial: {fileID: 2100000, guid: 0bb52625660964741a8d83878c5b1f25, type: 2}
+  grassMaterial: {fileID: 2100000, guid: 1cc89ef0fe0d517488efe6dfd087dcfc, type: 2}
+  concreteMaterial: {fileID: 2100000, guid: 4aafce6bbbf3d0b4184a98d986381c1a, type: 2}
+  steelMaterial: {fileID: 2100000, guid: 02778d134052a1742a8d57fd3ff43b04, type: 2}
+  paintedMetalMaterial: {fileID: 2100000, guid: ecd271ac5ae660c4ea1af95deb99469b, type: 2}
+  foliageMaterial: {fileID: 2100000, guid: e92ac2ac1fa93e44581eecf6516a233c, type: 2}
+  barkMaterial: {fileID: 2100000, guid: af006cde537040545bcba01ab54e0112, type: 2}
+  rockMaterial: {fileID: 2100000, guid: 102f4a4c00583334bb03dbe38640c97a, type: 2}
+  woodMaterial: {fileID: 2100000, guid: 47a0d19e17c289f42b3bb521ac921b88, type: 2}
+  cornMaterial: {fileID: 2100000, guid: df0e7b4b6e3e1ca4eaa8b21e28e66195, type: 2}
+  canopyMaterial: {fileID: 2100000, guid: cb31b07561fa1d64a832f9c7ddaa0d3a, type: 2}
+  harvesterPrefab: {fileID: 6536248862814057990, guid: 2ac9bdd32c995fa829d78278275b091f, type: 3}
+  cartPrefab: {fileID: 8560572608192255350, guid: fed47ce2438367d7dbf3fde3f8a09433, type: 3}
+  grainMaterial: {fileID: 2100000, guid: 3d3ecbf90fe42e34692856834b762dd8, type: 2}
+  markerMaterial: {fileID: 2100000, guid: 8a9cbf59f54e3a749b724360222c1dfb, type: 2}
+  lineMaterial: {fileID: 2100000, guid: 1659726cb4cad6f4692b9cfc7277ec04, type: 2}
+  labelFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  labelMaterial: {fileID: 2100000, guid: 2590bf42d0732d144b42a16ab6bc9653, type: 2}

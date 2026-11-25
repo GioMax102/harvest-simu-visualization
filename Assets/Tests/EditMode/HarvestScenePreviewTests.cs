@@ -81,7 +81,7 @@ namespace HarvestSim.Tests
                 while (Preview().GetInstanceID() == firstId && EditorApplication.timeSinceStartup < deadline)
                     yield return null;
                 Assert.That(Preview().GetInstanceID(), Is.Not.EqualTo(firstId));
-                Assert.That(Preview().cellsRoot.childCount, Is.EqualTo(controller.initialTrace == example ? 12 : 56));
+                Assert.That(Preview().Grid.Width * Preview().Grid.Height, Is.EqualTo(controller.initialTrace == example ? 12 : 56));
                 int changedId = Preview().GetInstanceID();
                 deadline = EditorApplication.timeSinceStartup + .25;
                 while (EditorApplication.timeSinceStartup < deadline)

@@ -10,6 +10,8 @@ namespace HarvestSim.Visualization
     public sealed class TraceClient : MonoBehaviour
     {
         public string baseUrl = "http://127.0.0.1:8000";
+        [Tooltip("Segundos de espera para una simulación: un campo de 60×40 tarda alrededor de 1.5 min en el servidor.")]
+        public int simulationTimeout = 300;
         public PlaybackController controller;
         bool busy;
         bool serverHealthy;
@@ -30,9 +32,11 @@ namespace HarvestSim.Visualization
         IEnumerator RefreshScenariosRoutine()
         {
             SetBusy(true);
+            controller.hud.SetServerState(ServerState.Checking);
             serverHealthy = false;
             yield return CheckHealth();
             if (serverHealthy) yield return GetScenarios();
+            controller.hud.SetServerState(serverHealthy ? ServerState.Online : ServerState.Offline);
             SetBusy(false);
         }
 
@@ -143,16 +147,18 @@ namespace HarvestSim.Visualization
         IEnumerator GetTrace(string scenario, string strategy, int seed)
         {
             SetBusy(true);
+            controller.hud.SetServerState(ServerState.Simulating, $"Simulando {scenario} · {strategy}…");
             string url = (baseUrl ?? "").TrimEnd('/') + "/api/escenarios/" + Uri.EscapeDataString(scenario) +
                          "/trace?seed=" + seed + "&estrategia=" + Uri.EscapeDataString(strategy);
             string body = null, requestError = null;
-            yield return Request(url, 30, (response, error) => { body = response; requestError = error; });
-            if (requestError == null) controller.LoadTraceJson(body, scenario);
+            yield return Request(url, Mathf.Max(30, simulationTimeout), (response, error) => { body = response; requestError = error; });
+            if (requestError == null) controller.LoadTraceJson(body, $"{scenario}__{strategy}__seed{seed}");
             if (requestError != null || controller.Playback == null)
             {
                 string error = requestError ?? controller.hud.errorText.text;
                 LoadLocalAfterError("No se pudo simular " + scenario + ": " + error);
             }
+            controller.hud.SetServerState(requestError == null ? ServerState.Online : ServerState.Offline);
             SetBusy(false);
         }
     }
