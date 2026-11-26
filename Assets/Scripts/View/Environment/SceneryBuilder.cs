@@ -33,7 +33,7 @@ namespace HarvestSim.Visualization
             foreach (var home in grid.Bases) FuelStation(grid.CellToWorld(home.Value.x, home.Value.y));
             foreach (var group in grid.ObstacleGroups)
                 if (group.IsLinear) Hedgerow(group); else Grove(group);
-            Fence();
+            if (!grid.HasMap) Fence(); // con el mapa real, los lotes los rodean caminos, no una cerca rectangular
             MarginTrees();
 
             Emit("Silos y estructuras", steel, art.steelMaterial, ShadowCastingMode.On, parent);
@@ -205,8 +205,14 @@ namespace HarvestSim.Visualization
                     var p = new Vector3(Range(b.min.x - outer, b.max.x + outer), 0, Range(b.min.z - outer, b.max.z + outer * .3f));
                     bool insideRing = p.x > b.min.x - inner && p.x < b.max.x + inner && p.z > b.min.z - inner;
                     if (insideRing) continue;
+                    p.y = grid.GroundHeight(p);
                     Tree(p, Range(8, 16), random.Next());
-                    if (random.NextDouble() < .5) Shrub(p + new Vector3(Range(-4, 4), 0, Range(-4, 4)), Range(1.5f, 3f), random.Next());
+                    if (random.NextDouble() < .5)
+                    {
+                        var q = p + new Vector3(Range(-4, 4), 0, Range(-4, 4));
+                        q.y = grid.GroundHeight(q);
+                        Shrub(q, Range(1.5f, 3f), random.Next());
+                    }
                     break;
                 }
             }

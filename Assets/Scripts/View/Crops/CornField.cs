@@ -96,6 +96,7 @@ namespace HarvestSim.Visualization
                         for (int s = 0; s < segments; s++)
                         {
                             var local = center + new Vector3(-size / 2 + (s + .5f) * segment, 0, -size / 2 + (r + .5f) * size / rows);
+                            if (grid.HasRelief) local.y = grid.GroundHeight(local.x, local.z); // cada planta sobre el relieve
                             int tone = yield < 0 ? (random.NextDouble() < .7 ? 1 : random.Next(0, 3))
                                 : Mathf.Clamp(Mathf.FloorToInt(yield / (float)Mathf.Max(1, maxYield) * 3 - .01f) + (random.NextDouble() < .15 ? random.Next(-1, 2) : 0), 0, 2);
                             float heightScale = (float)(.93 + random.NextDouble() * .12);
