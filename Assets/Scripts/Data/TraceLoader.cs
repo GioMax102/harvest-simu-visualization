@@ -78,7 +78,8 @@ namespace HarvestSim.Visualization
         {
             var root = trace.Json;
             string version = Text(root, "schema_version");
-            Require(version == "2.1" || version == "2.2", "schema_version", "solo se admite 2.1 o 2.2");
+            Require(version == "2.1" || version == "2.2" || version == "2.3", "schema_version", "solo se admite 2.1, 2.2 o 2.3");
+            bool desde22 = version != "2.1"; // 2.3 solo agrega campos a 2.2
             var meta = Field(root, "meta", JTokenType.Object);
             Text(meta, "escenario");
             int total = Integer(meta, "total_ticks");
@@ -90,12 +91,35 @@ namespace HarvestSim.Visualization
             Cell(world["bodega"], width, height);
             var bases = (JObject)Field(world, "bases", JTokenType.Object);
             foreach (var entry in bases.Properties()) Cell(entry.Value, width, height);
+            // 2.3 con mapa real (caminos, fuera de campo y lotes): la fila 0 ya no es de servicio y el campo es todo
+            // menos obstáculos, caminos, fuera de campo, bodega y bases (docs/especificacion_terreno.md de harvest_sim).
+            bool map = world["caminos"] != null || world["fuera_de_campo"] != null || world["lotes"] != null;
+            Require(!map || version == "2.3", "mundo", "el mapa (caminos, fuera_de_campo, lotes) requiere trace 2.3");
             var obstacles = new HashSet<(int, int)>();
             foreach (var token in (JArray)Field(world, "obstaculos", JTokenType.Array))
             {
                 var cell = Cell(token, width, height);
-                Require(cell.y > 0 && obstacles.Add(cell), token.Path, "obstáculo repetido o en servicio");
+                Require((map || cell.y > 0) && obstacles.Add(cell), token.Path, "obstáculo repetido o en servicio");
             }
+            var notField = new HashSet<(int, int)>(obstacles);
+            if (map)
+            {
+                foreach (var name in new[] { "caminos", "fuera_de_campo" })
+                    if (world[name] != null)
+                        foreach (var token in (JArray)Field(world, name, JTokenType.Array))
+                            Require(notField.Add(Cell(token, width, height)) || name == "caminos", token.Path, name + ": celda repetida o con obstáculo");
+                notField.Add(Cell(world["bodega"], width, height));
+                foreach (var entry in bases.Properties()) notField.Add(Cell(entry.Value, width, height));
+                if (world["tamano_celda_m"] != null) Require(Number(world, "tamano_celda_m") > 0, "mundo.tamano_celda_m", "debe ser > 0");
+                if (world["altura_m"] != null)
+                {
+                    var rowsH = (JArray)Field(world, "altura_m", JTokenType.Array);
+                    Require(rowsH.Count == height, rowsH.Path, "alto de altura_m distinto al mapa");
+                    foreach (var row in rowsH) Require(row is JArray r && r.Count == width, row.Path, "ancho de altura_m distinto al mapa");
+                }
+                if (world["geo"] != null) Field((JObject)Field(world, "geo", JTokenType.Object), "formas", JTokenType.Object);
+            }
+            bool IsField((int x, int y) c) => map ? !notField.Contains(c) : c.y > 0 && !obstacles.Contains(c);
             if (world["rendimiento"] != null)
             {
                 var rows = (JArray)Field(world, "rendimiento", JTokenType.Array);
@@ -109,7 +133,7 @@ namespace HarvestSim.Visualization
                         long n = 0;
                         Require(value.Type == JTokenType.Integer && long.TryParse(value.ToString(), out n) && n >= 0,
                                 value.Path, "rendimiento entero no negativo requerido");
-                        Require((y > 0 && !obstacles.Contains((x, y))) || n == 0, value.Path, "rendimiento fuera del campo");
+                        Require(IsField((x, y)) || n == 0, value.Path, "rendimiento fuera del campo");
                     }
                 }
             }
@@ -122,7 +146,7 @@ namespace HarvestSim.Visualization
                 Require(!agents.ContainsKey(id), a.Path, "id repetido");
                 agents.Add(id, Integer(a, "capacidad", 1)); agentTypes.Add(id, type);
                 var home = Cell(a["base"], width, height);
-                Require(bases[id] != null && home == Cell(bases[id], width, height) && home.y == 0, a.Path, "base inconsistente");
+                Require(bases[id] != null && home == Cell(bases[id], width, height) && (map || home.y == 0), a.Path, "base inconsistente");
             }
             Require(agents.Count > 0, "agentes", "catálogo vacío");
             foreach (var entry in bases.Properties()) Require(agents.ContainsKey(entry.Name), entry.Path, "base de agente desconocido");
@@ -173,18 +197,18 @@ namespace HarvestSim.Visualization
                         case "CELDA_COSECHADA":
                             Agent(e, "agente", agents);
                             var cell = Cell(e["celda"], width, height);
-                            Require(cell.y > 0 && !obstacles.Contains(cell) && harvested.Add(cell), e.Path, "celda no cosechable o repetida");
+                            Require(IsField(cell) && harvested.Add(cell), e.Path, "celda no cosechable o repetida");
                             // 2.2: cantidad es opcional (si falta, vale el rendimiento de la celda o grano_por_celda)
-                            if (version == "2.2" && e["cantidad"] != null) Integer(e, "cantidad", 1);
+                            if (desde22 && e["cantidad"] != null) Integer(e, "cantidad", 1);
                             break;
                         case "DEPOSITO":
                             Agent(e, "agente", agents); Integer(e, "cantidad"); Integer(e, "entregado_total"); break;
                         case "BLOQUEO": Agent(e, "agente", agents); break;
                         case "RECARGA":
-                            Require(version == "2.2", e.Path, "RECARGA requiere trace 2.2");
+                            Require(desde22, e.Path, "RECARGA requiere trace 2.2");
                             Agent(e, "agente", agents); Number(e, "cantidad"); Number(e, "nivel"); break;
                         case "RESTRICCION":
-                            Require(version == "2.2", e.Path, "RESTRICCION requiere trace 2.2");
+                            Require(desde22, e.Path, "RESTRICCION requiere trace 2.2");
                             Agent(e, "agente", agents); Text(e, "regla"); Text(e, "detalle"); break;
                         case "MENSAJE_ENVIADO":
                             int message = Integer(e, "id");
@@ -197,7 +221,7 @@ namespace HarvestSim.Visualization
                                 { "RECHAZO", "refuse" }, { "ACEPTACION", "accept-proposal" },
                                 { "RECHAZO_PROPUESTA", "reject-proposal" } };
                             Require(acts.TryGetValue(messageType, out string expectedAct) && act == expectedAct &&
-                                    (version == "2.2" || messageType == "LLENA" || messageType == "TRANSFERENCIA_TERMINADA"),
+                                    (desde22 || messageType == "LLENA" || messageType == "TRANSFERENCIA_TERMINADA"),
                                     e.Path, "mensaje/performativa no soportados");
                             Field(e, "payload", JTokenType.Object); Integer(e, "entrega_en", tick + 1);
                             break;

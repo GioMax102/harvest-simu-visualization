@@ -213,8 +213,11 @@ namespace HarvestSim.Visualization
                 string transit = state.Messages.Count == 0 ? "" : "\n" + $"<color={HudFormat.Muted}>Mensajes en tránsito ({state.Messages.Count}):</color> " +
                     string.Join(", ", state.Messages.OrderBy(p => p.Key).Take(4).Select(p => $"{p.Value["tipo_mensaje"]} → {p.Value["a"]}")) +
                     (state.Messages.Count > 4 ? "…" : "");
+                // Trace 2.3: atribución de las fuentes del mapa real (trazo del KML y relieve Copernicus DEM).
+                string fuentes = trace.World["geo"]?["atribucion"] is JValue atribucion
+                    ? $"\n<size=80%><color={HudFormat.Muted}>{atribucion}</color></size>" : "";
                 worldText.text = $"Cosechadas <b>{state.Harvested.Count}</b>/{field} ({harvested * 100:0}%)\n" +
-                                 $"Grano entregado <b>{state.Delivered}</b>" + (expected > 0 ? $"/{expected:0}" : "") + transit;
+                                 $"Grano entregado <b>{state.Delivered}</b>" + (expected > 0 ? $"/{expected:0}" : "") + transit + fuentes;
             }
             if (eventsText) eventsText.text = HudFormat.RecentEvents(trace, state.Tick);
         }

@@ -34,8 +34,12 @@ namespace HarvestSim.Visualization
             var terrain = new MeshBuilder();
             var min = bounds.min - new Vector3(far, 0, far);
             var max = bounds.max + new Vector3(far, 0, far);
-            terrain.AddQuad(new Vector3(min.x, 0, min.z), new Vector3(min.x, 0, max.z), new Vector3(max.x, 0, max.z), new Vector3(max.x, 0, min.z),
+            // Con relieve (trace 2.3 con altura_m), la planicie lejana queda un poco abajo de lo más bajo y, sobre la
+            // cuadrícula y su margen, una malla sigue el terreno real (DEM interpolado entre centros de celda).
+            float lejos = grid.HasRelief ? LowestHeight(grid) - .5f : 0f;
+            terrain.AddQuad(new Vector3(min.x, lejos, min.z), new Vector3(min.x, lejos, max.z), new Vector3(max.x, lejos, max.z), new Vector3(max.x, lejos, min.z),
                 Vector3.up, new Vector2(min.x, min.z), new Vector2(max.x, max.z));
+            if (grid.HasRelief) AddDrapedGround(terrain, bounds, margin, size);
             terrainMesh = terrain.ToMesh("Terreno");
             Terrain = Renderer("Terreno", terrainMesh, parent, art.grassMaterial);
 
@@ -45,10 +49,12 @@ namespace HarvestSim.Visualization
                 {
                     var kind = grid.KindAt(x, y);
                     if (kind is CellKind.Obstacle or CellKind.OutsideField) continue;
+                    // Con mapa, los caminos se dibujan con su forma real (TerrainShapes), no como cuadros de 12 m.
+                    if (grid.HasMap && kind == CellKind.Service) continue;
                     var c = grid.CellToWorld(x, y, TileHeight);
                     float h = size / 2;
                     quadStart[new Vector2Int(x, y)] = parcels.VertexCount;
-                    parcels.AddQuad(c + new Vector3(-h, 0, -h), c + new Vector3(-h, 0, h), c + new Vector3(h, 0, h), c + new Vector3(h, 0, -h),
+                    parcels.AddQuad(Draped(c.x - h, c.z - h), Draped(c.x - h, c.z + h), Draped(c.x + h, c.z + h), Draped(c.x + h, c.z - h),
                         Vector3.up, new Vector2(c.x - h, c.z - h), new Vector2(c.x + h, c.z + h));
                 }
             parcelsMesh = parcels.ToMesh("Parcelas");
@@ -57,6 +63,36 @@ namespace HarvestSim.Visualization
             Parcels = Renderer("Parcelas", parcelsMesh, parent, art.soilMaterial, art.stubbleMaterial, art.roadMaterial, art.concreteMaterial);
             Render(new HashSet<(int x, int y)>());
         }
+
+        /// <summary>Esquina de una parcela apoyada en el relieve (y = altura interpolada + grosor del mosaico).</summary>
+        Vector3 Draped(float x, float z) => new(x, grid.GroundHeight(x, z) + TileHeight, z);
+
+        static float LowestHeight(FieldGrid grid)
+        {
+            float low = float.MaxValue;
+            for (int y = 0; y < grid.Height; y++)
+                for (int x = 0; x < grid.Width; x++) low = Mathf.Min(low, grid.HeightAt(x, y));
+            return low;
+        }
+
+        /// <summary>Malla del suelo que sigue el relieve sobre la cuadrícula y su margen, con un paso de una celda.
+        /// La normal de cada cuadro sale de su pendiente para que la luz marque las lomas.</summary>
+        void AddDrapedGround(MeshBuilder builder, Bounds bounds, float margin, float step)
+        {
+            float x0 = bounds.min.x - margin, x1 = bounds.max.x + margin, z0 = bounds.min.z - margin, z1 = bounds.max.z + margin;
+            int nx = Mathf.CeilToInt((x1 - x0) / step), nz = Mathf.CeilToInt((z1 - z0) / step);
+            for (int i = 0; i < nx; i++)
+                for (int j = 0; j < nz; j++)
+                {
+                    float ax = x0 + i * step, bx = ax + step, az = z0 + j * step, bz = az + step;
+                    Vector3 a = Ground(ax, az), b = Ground(ax, bz), c = Ground(bx, bz), d = Ground(bx, az);
+                    var normal = Vector3.Cross(b - a, d - a).normalized;
+                    if (normal.y < 0) normal = -normal;
+                    builder.AddQuad(a, b, c, d, normal, new Vector2(ax, az), new Vector2(bx, bz));
+                }
+        }
+
+        Vector3 Ground(float x, float z) => new(x, grid.GroundHeight(x, z) - .02f, z);
 
         static MeshRenderer Renderer(string name, Mesh mesh, Transform parent, params Material[] materials)
         {

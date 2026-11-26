@@ -20,6 +20,7 @@ namespace HarvestSim.Visualization
         public CornField Corn { get; private set; }
         public GroundBuilder Ground { get; private set; }
         public SceneryBuilder Scenery { get; private set; }
+        public TerrainShapes Shapes { get; private set; }
         public CoordinationArcs Arcs { get; private set; }
         public CameraRig Rig { get; private set; }
         public IReadOnlyDictionary<string, AgentView> Agents => agents;
@@ -49,6 +50,9 @@ namespace HarvestSim.Visualization
 
             Scenery = new SceneryBuilder();
             Scenery.Build(Grid, art, structuresRoot);
+            // Trace 2.3: caminos y contornos reales (mundo.geo.formas) sobre el relieve.
+            Shapes = new TerrainShapes();
+            Shapes.Build(Grid, data, art, structuresRoot);
             Arcs = new CoordinationArcs();
             Arcs.Build(structuresRoot, art.lineMaterial, Grid.CellSize);
 
@@ -199,11 +203,11 @@ namespace HarvestSim.Visualization
                     if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
                 }
             }
-            Ground?.Destroy(); Scenery?.Destroy(); Arcs?.Clear();
-            Ground = null; Scenery = null; Arcs = null; Corn = null; Grid = null;
+            Ground?.Destroy(); Scenery?.Destroy(); Shapes?.Destroy(); Arcs?.Clear();
+            Ground = null; Scenery = null; Shapes = null; Arcs = null; Corn = null; Grid = null;
             agents.Clear(); trace = null; nextCues = null; nextCuesTick = -1; Cues = new TickCues();
         }
 
-        void OnDestroy() { Ground?.Destroy(); Scenery?.Destroy(); }
+        void OnDestroy() { Ground?.Destroy(); Scenery?.Destroy(); Shapes?.Destroy(); }
     }
 }

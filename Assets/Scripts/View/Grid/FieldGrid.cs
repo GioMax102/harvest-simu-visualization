@@ -34,25 +34,37 @@ namespace HarvestSim.Visualization
         public IReadOnlyDictionary<string, Vector2Int> Bases => bases;
         public IReadOnlyList<ObstacleGroup> ObstacleGroups => obstacleGroups;
         public int FieldCellCount { get; }
+        /// <summary>True si el trace trae el mapa real (2.3): caminos, fuera de campo y lotes.</summary>
+        public bool HasMap { get; }
+        /// <summary>Altura de referencia (m sobre el nivel del mar): la mínima del campo. El suelo de Unity
+        /// queda en (altura − BaseHeight), así que el campo empieza cerca de y = 0.</summary>
+        public float BaseHeight { get; private set; }
+        public bool HasRelief => heights != null;
 
         readonly CellKind[,] kinds;
+        float[,] heights; // relativas a BaseHeight, por celda (centro)
         readonly Dictionary<string, Vector2Int> bases = new();
         readonly List<ObstacleGroup> obstacleGroups = new();
 
         public FieldGrid(int width, int height, float cellSize, Vector2Int warehouse,
-            IDictionary<string, Vector2Int> agentBases, IEnumerable<Vector2Int> obstacles, IEnumerable<Vector2Int> outsideField = null)
+            IDictionary<string, Vector2Int> agentBases, IEnumerable<Vector2Int> obstacles, IEnumerable<Vector2Int> outsideField = null,
+            IEnumerable<Vector2Int> roads = null, float[,] absoluteHeights = null)
         {
             if (width < 1 || height < 2) throw new ArgumentOutOfRangeException(nameof(width), "La cuadrícula necesita al menos 1×2 celdas.");
             if (!(cellSize > 0) || float.IsInfinity(cellSize)) throw new ArgumentOutOfRangeException(nameof(cellSize));
             Width = width; Height = height; CellSize = cellSize; Warehouse = warehouse;
+            HasMap = roads != null;
             kinds = new CellKind[width, height];
             for (int x = 0; x < width; x++)
             {
-                kinds[x, 0] = CellKind.Service;
+                // Sin mapa, la fila 0 es la de servicio; con mapa, el servicio son las celdas de camino.
+                kinds[x, 0] = HasMap ? CellKind.Field : CellKind.Service;
                 for (int y = 1; y < height; y++) kinds[x, y] = CellKind.Field;
             }
+            if (roads != null)
+                foreach (var cell in roads) if (InBounds(cell.x, cell.y)) kinds[cell.x, cell.y] = CellKind.Service;
             if (outsideField != null)
-                foreach (var cell in outsideField) if (InBounds(cell.x, cell.y) && cell.y > 0) kinds[cell.x, cell.y] = CellKind.OutsideField;
+                foreach (var cell in outsideField) if (InBounds(cell.x, cell.y) && (HasMap || cell.y > 0)) kinds[cell.x, cell.y] = CellKind.OutsideField;
             foreach (var cell in obstacles) if (InBounds(cell.x, cell.y)) kinds[cell.x, cell.y] = CellKind.Obstacle;
             foreach (var pair in agentBases)
             {
@@ -64,7 +76,43 @@ namespace HarvestSim.Visualization
             foreach (var kind in kinds) if (kind == CellKind.Field) field++;
             FieldCellCount = field;
             GroupObstacles();
+            if (absoluteHeights != null) SetHeights(absoluteHeights);
         }
+
+        /// <summary>Relieve por celda (metros, alto × ancho como en <c>mundo.altura_m</c>). La referencia es la
+        /// altura mínima del campo (o de la cuadrícula si no hay campo).</summary>
+        void SetHeights(float[,] absolute)
+        {
+            if (absolute.GetLength(0) != Height || absolute.GetLength(1) != Width)
+                throw new ArgumentException("altura_m no tiene el tamaño de la cuadrícula");
+            float min = float.MaxValue, minAll = float.MaxValue;
+            for (int y = 0; y < Height; y++)
+                for (int x = 0; x < Width; x++)
+                {
+                    minAll = Mathf.Min(minAll, absolute[y, x]);
+                    if (kinds[x, y] == CellKind.Field) min = Mathf.Min(min, absolute[y, x]);
+                }
+            BaseHeight = min < float.MaxValue ? min : minAll;
+            heights = new float[Width, Height];
+            for (int y = 0; y < Height; y++)
+                for (int x = 0; x < Width; x++) heights[x, y] = absolute[y, x] - BaseHeight;
+        }
+
+        /// <summary>Altura del suelo (y de Unity) en un punto del mundo: interpolación bilineal entre los centros
+        /// de las celdas; fuera de la cuadrícula se usa la orilla más cercana. 0 si no hay relieve.</summary>
+        public float GroundHeight(float worldX, float worldZ)
+        {
+            if (heights == null) return 0f;
+            float gx = Mathf.Clamp(worldX / CellSize, 0, Width - 1), gy = Mathf.Clamp(-worldZ / CellSize, 0, Height - 1);
+            int x0 = Mathf.Min((int)gx, Width - 2 < 0 ? 0 : Width - 2), y0 = Mathf.Min((int)gy, Height - 2);
+            int x1 = Mathf.Min(x0 + 1, Width - 1), y1 = Mathf.Min(y0 + 1, Height - 1);
+            float tx = gx - x0, ty = gy - y0;
+            float a = Mathf.Lerp(heights[x0, y0], heights[x1, y0], tx), b = Mathf.Lerp(heights[x0, y1], heights[x1, y1], tx);
+            return Mathf.Lerp(a, b, ty);
+        }
+
+        public float GroundHeight(Vector3 world) => GroundHeight(world.x, world.z);
+        public float HeightAt(int x, int y) => heights == null || !InBounds(x, y) ? 0f : heights[x, y];
 
         /// <summary>Crea el layout a partir de <c>mundo</c>. Usa <c>mundo.tamano_celda_m</c> si existe (trace 2.3).</summary>
         public static FieldGrid FromTrace(TraceData trace, float? cellSizeOverride = null)
@@ -75,8 +123,17 @@ namespace HarvestSim.Visualization
             var agentBases = new Dictionary<string, Vector2Int>();
             if (world["bases"] is JObject homes)
                 foreach (var home in homes.Properties()) agentBases[home.Name] = Cell(home.Value);
+            bool map = world["caminos"] != null || world["lotes"] != null;
+            float[,] alturas = null;
+            if (world["altura_m"] is JArray rows && rows.Count == trace.Height)
+            {
+                alturas = new float[trace.Height, trace.Width];
+                for (int y = 0; y < trace.Height; y++)
+                    for (int x = 0; x < trace.Width; x++) alturas[y, x] = (float)rows[y][x];
+            }
             return new FieldGrid(trace.Width, trace.Height, size, Cell(world["bodega"]), agentBases,
-                Cells(world["obstaculos"]), Cells(world["fuera_de_campo"]));
+                Cells(world["obstaculos"]), Cells(world["fuera_de_campo"]),
+                map ? Cells(world["caminos"]) : null, alturas);
         }
 
         static Vector2Int Cell(JToken token) => token is JArray pair && pair.Count == 2 ? new Vector2Int((int)pair[0], (int)pair[1]) : Vector2Int.zero;
@@ -90,8 +147,11 @@ namespace HarvestSim.Visualization
         public CellKind KindAt(int x, int y) => InBounds(x, y) ? kinds[x, y] : CellKind.OutsideField;
         public bool IsField(int x, int y) => KindAt(x, y) == CellKind.Field;
 
-        public Vector3 CellToWorld(int x, int y, float height = 0) => new(x * CellSize, height, -y * CellSize);
-        public Vector3 CellToWorld(Vector2 cell, float height = 0) => new(cell.x * CellSize, height, -cell.y * CellSize);
+        // La altura del relieve se suma sola: todo lo que se coloca con CellToWorld queda apoyado en el terreno.
+        public Vector3 CellToWorld(int x, int y, float height = 0) =>
+            new(x * CellSize, height + (heights != null && InBounds(x, y) ? heights[x, y] : GroundHeight(x * CellSize, -y * CellSize)), -y * CellSize);
+        public Vector3 CellToWorld(Vector2 cell, float height = 0) =>
+            new(cell.x * CellSize, height + GroundHeight(cell.x * CellSize, -cell.y * CellSize), -cell.y * CellSize);
         public Vector2Int WorldToCell(Vector3 position) =>
             new(Mathf.RoundToInt(position.x / CellSize), Mathf.RoundToInt(-position.z / CellSize));
 
