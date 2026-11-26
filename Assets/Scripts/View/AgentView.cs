@@ -88,7 +88,7 @@ namespace HarvestSim.Visualization
             Marker.SetPropertyBlock(markerProperties);
         }
 
-        public void Render(AgentState state, VehiclePose pose, string alert = null, string proposal = null)
+        public void Render(AgentState state, VehiclePose pose, string alert = null, string proposal = null, string decision = null)
         {
             SetPose(pose);
             Restricted = alert != null && alert.Contains("RESTRICCION:");
@@ -102,6 +102,7 @@ namespace HarvestSim.Visualization
             if (capacity > 0) builder.Append(" · ").Append(state.Load).Append('/').Append(capacity);
             builder.Append("</size>");
             if (proposal != null) builder.Append("\n<color=#9fd0ff>Oferta: ").Append(proposal).Append("</color>");
+            if (decision != null) builder.Append("\n<color=#c9b6ff>").Append(decision).Append("</color>");
             if (alert != null) builder.Append("\n<color=#ffb4a0>").Append(alert).Append("</color>");
             Label.text = builder.ToString();
         }

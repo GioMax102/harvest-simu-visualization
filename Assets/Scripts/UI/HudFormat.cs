@@ -85,7 +85,50 @@ namespace HarvestSim.Visualization
             ("mensajes_enviados", "Mensajes", ""),
             ("colisiones", "Colisiones", ""),
             ("costo_total", "Costo J", ""),
+            // M1: despacho aprendido (solo vienen con qlearning o sarsa)
+            ("decisiones_despacho", "Decisiones Q", ""),
+            ("pedidos_tabla", "Pedidos por la tabla", ""),
+            ("pedidos_respaldo", "Pedidos por umbral", ""),
+            ("cliffs_despacho", "Tolva llena sin carro", ""),
         };
+
+        /// <summary>Rango de carga de cada tramo de la tolva (M1); el 5 es «llena».</summary>
+        public static string Bracket(int tramo) => tramo >= 5 ? "llena" : $"{tramo * 20}–{tramo * 20 + 20} %";
+
+        /// <summary>Texto corto para la placa en el tick de la decisión, solo cuando pide carro.</summary>
+        public static string DecisionCue(JObject decision)
+        {
+            if (decision == null || (string)decision["accion"] != "pedir") return null;
+            return (string)decision["origen"] switch
+            {
+                "tabla" => "Q: pide carro",
+                "umbral" => "Umbral: pide carro",
+                "forzada" => "Tolva llena: pide carro",
+                "exploracion" => "Explora: pide carro",
+                _ => "Pide carro"
+            };
+        }
+
+        /// <summary>«Q · tolva 40–60 % · 1 libre · seguir −312 / pedir −298 → pide»: la última decisión (libres = carros
+        /// sin servicio; seguir/pedir = valores Q de la tabla).</summary>
+        public static string DecisionText(JObject decision)
+        {
+            if (decision?["estado"] is not JObject state) return null;
+            int tramo = (int)state["tramo"], libres = (int)state["carros_libres"];
+            string origin = (string)decision["origen"], action = (string)decision["accion"];
+            string head = origin switch { "tabla" => "Q", "umbral" => "Umbral", "forzada" => "Cliff", "exploracion" => "Explora", _ => origin };
+            var parts = new List<string> { head, "tolva " + Bracket(tramo),
+                libres == 0 ? "sin libres" : libres == 1 ? "1 libre" : "2+ libres" };
+            if ((bool)state["otra_pidio"]) parts.Add("otra pidió");
+            if (decision["q"] is JObject q)
+                parts.Add($"seguir {Number(q["seguir"], "0")} / pedir {Number(q["pedir"], "0")}");
+            string verb = action == "pedir" ? "pide" : "sigue";
+            return Color(string.Join(" · ", parts) + " → ", Muted) + (action == "pedir" ? Color(verb, Info) : verb);
+        }
+
+        public static string Number(JToken token, string format) =>
+            token is JValue v && v.Type is JTokenType.Float or JTokenType.Integer
+                ? ((double)v).ToString(format, CultureInfo.InvariantCulture).Replace("-", "−") : token?.ToString() ?? "";
 
         /// <summary>Resultados finales que trae el archivo (calculados por Python).</summary>
         public static string Metrics(JObject metrics)
@@ -138,6 +181,9 @@ namespace HarvestSim.Visualization
             $"Arco {Color("azul", Info)}: solicitud de servicio (cfp)\n" +
             $"Arco {Color("naranja", Warn)}: carro ganador hasta terminar la transferencia\n" +
             "Oferta en la placa: costo de la propuesta\n\n" +
+            "<b>Despacho aprendido (qlearning, sarsa)</b>\n" +
+            $"Placa {Color("lila", "#c9b6ff")}: la cosechadora pide carro (Q, umbral o tolva llena)\n" +
+            "Tarjeta: última decisión con su tolva, carros libres y valores Q\n\n" +
             "<b>Campo</b>\n" +
             "Maíz en pie: pendiente · rastrojo: cosechado\nMaíz más oscuro: más rendimiento\n" +
             "Árboles y rocas: obstáculos · silos: bodega · tanques: bases\n\n" +

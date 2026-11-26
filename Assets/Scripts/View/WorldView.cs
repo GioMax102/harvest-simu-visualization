@@ -85,7 +85,8 @@ namespace HarvestSim.Visualization
             {
                 var value = state.Agents[pair.Key];
                 Cues.Proposals.TryGetValue(pair.Key, out string proposal);
-                pair.Value.Render(value, VehicleMotion.At(Grid, value), Cues.AlertText(pair.Key), proposal);
+                Cues.Decisions.TryGetValue(pair.Key, out var decision);
+                pair.Value.Render(value, VehicleMotion.At(Grid, value), Cues.AlertText(pair.Key), proposal, HudFormat.DecisionCue(decision));
             }
             Arcs.Render(Cues, state, agents);
         }

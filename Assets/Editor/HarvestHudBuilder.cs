@@ -74,7 +74,7 @@ namespace HarvestSim.Editor
             hud.header = Label("Subtitulo", title, "", 13, TextMuted);
 
             hud.scenarioDropdown = Field(row, "Escenario", 190, parent => Dropdown("Escenario", parent, new List<string> { "escenario_a" }));
-            hud.strategyDropdown = Field(row, "Estrategia", 160, parent => Dropdown("Estrategia", parent, new List<string> { "base", "subasta", "anticipada", "anticipada_plus" }));
+            hud.strategyDropdown = Field(row, "Estrategia", 160, parent => Dropdown("Estrategia", parent, new List<string> { "base", "subasta", "anticipada", "anticipada_plus", "qlearning", "sarsa" }));
             hud.seedInput = Field(row, "Semilla", 70, parent => Input("Semilla", parent, "0"));
             hud.simulateButton = TextButton("Simular", row, "Simular", Accent, AccentText, 110);
             hud.refreshScenariosButton = IconButton("ActualizarEscenarios", row, Icon("refresh"), 36, Control, out _);
