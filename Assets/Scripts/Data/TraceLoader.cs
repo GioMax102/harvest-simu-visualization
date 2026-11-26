@@ -210,6 +210,27 @@ namespace HarvestSim.Visualization
                         case "RESTRICCION":
                             Require(desde22, e.Path, "RESTRICCION requiere trace 2.2");
                             Agent(e, "agente", agents); Text(e, "regla"); Text(e, "detalle"); break;
+                        case "DECISION_DESPACHO":
+                            // M1: una decisión del despacho aprendido (harvest_sim, docs/especificacion_mejoras.md §M1).
+                            Require(desde22, e.Path, "DECISION_DESPACHO requiere trace 2.2");
+                            string decider = Agent(e, "agente", agents);
+                            Require(agentTypes[decider] == "cosechadora", e.Path, "solo una cosechadora decide el despacho");
+                            var dispatch = (JObject)Field(e, "estado", JTokenType.Object);
+                            int bracket = Integer(dispatch, "tramo", 0, 5);
+                            Integer(dispatch, "carros_libres", 0, 2); Integer(dispatch, "distancia", 0, 3);
+                            Require(dispatch["otra_pidio"]?.Type == JTokenType.Boolean, dispatch.Path, "otra_pidio debe ser booleano");
+                            string action = Text(e, "accion"), origin = Text(e, "origen");
+                            Require(action is "seguir" or "pedir", e.Path, "accion debe ser seguir o pedir");
+                            Require(origin is "tabla" or "umbral" or "forzada" or "exploracion", e.Path, "origen desconocido");
+                            Require(origin != "forzada" || (action == "pedir" && bracket == 5), e.Path, "una decisión forzada es pedir con la tolva llena");
+                            if (e["q"] != null)
+                            {
+                                // los valores Q son costos acumulados: casi siempre negativos
+                                var q = Field(e, "q", JTokenType.Object);
+                                foreach (var key in new[] { "seguir", "pedir" })
+                                    Require(q[key] is JValue value && value.Type is JTokenType.Float or JTokenType.Integer, q.Path + "." + key, "número requerido");
+                            }
+                            break;
                         case "MENSAJE_ENVIADO":
                             int message = Integer(e, "id");
                             Require(sent.Add(message), e.Path, "id de mensaje repetido");

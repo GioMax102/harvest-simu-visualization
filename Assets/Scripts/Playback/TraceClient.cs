@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -112,23 +113,57 @@ namespace HarvestSim.Visualization
             }
             try
             {
-                JToken response = JToken.Parse(body);
-                var entries = response is JArray array ? array : response["escenarios"] as JArray;
-                if (entries == null) throw new FormatException("lista de escenarios inválida");
-                var names = new List<string>();
-                foreach (var entry in entries)
+                var list = ParseScenarios(JToken.Parse(body));
+                strategiesByScenario = list.strategies;
+                controller.hud.SetScenarios(list.names);
+                if (controller.hud.scenarioDropdown && !strategiesListener)
                 {
-                    string name = entry.Type == JTokenType.String ? (string)entry : (string)entry["nombre"];
-                    if (!string.IsNullOrWhiteSpace(name)) names.Add(name);
+                    controller.hud.scenarioDropdown.onValueChanged.AddListener(_ => SyncStrategies());
+                    strategiesListener = true;
                 }
-                if (names.Count == 0) throw new FormatException("lista de escenarios vacía");
-                controller.hud.SetScenarios(names);
+                SyncStrategies();
                 controller.hud.ClearError();
             }
             catch (Exception error)
             {
                 LoadLocalAfterError("No se pudo leer la lista de escenarios: " + error.Message);
             }
+        }
+
+        Dictionary<string, List<string>> strategiesByScenario = new();
+        bool strategiesListener;
+
+        /// <summary>Estrategias que el servidor puede correr en el escenario elegido (M1: las aprendidas solo
+        /// donde hay tabla entrenada).</summary>
+        void SyncStrategies()
+        {
+            var dropdown = controller.hud.scenarioDropdown;
+            if (!dropdown || dropdown.options.Count == 0) return;
+            string scenario = dropdown.options[dropdown.value].text;
+            if (strategiesByScenario.TryGetValue(scenario, out var names)) controller.hud.SetStrategies(names);
+        }
+
+        /// <summary>Lee la respuesta de /api/escenarios: nombres y, por escenario, sus estrategias (si el servidor
+        /// no las da por escenario, se usa la lista general "estrategias").</summary>
+        public static (List<string> names, Dictionary<string, List<string>> strategies) ParseScenarios(JToken response)
+        {
+            var entries = response is JArray array ? array : response["escenarios"] as JArray;
+            if (entries == null) throw new FormatException("lista de escenarios inválida");
+            static List<string> Texts(JToken token) =>
+                token is JArray list ? list.Where(t => t.Type == JTokenType.String).Select(t => (string)t).ToList() : null;
+            var general = response is JObject root ? Texts(root["estrategias"]) : null;
+            var names = new List<string>();
+            var strategies = new Dictionary<string, List<string>>();
+            foreach (var entry in entries)
+            {
+                string name = entry.Type == JTokenType.String ? (string)entry : (string)entry["nombre"];
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                names.Add(name);
+                var own = entry is JObject item ? Texts(item["estrategias"]) : null;
+                if ((own ?? general) is { Count: > 0 } chosen) strategies[name] = chosen;
+            }
+            if (names.Count == 0) throw new FormatException("lista de escenarios vacía");
+            return (names, strategies);
         }
 
         public void Simulate()

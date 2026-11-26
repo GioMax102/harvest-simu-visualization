@@ -48,3 +48,14 @@ python tools/exportar_traces_unity.py DESTINO/Assets/Data/Traces/entrega2 \
 ```
 
 El exportador solo escribe los traces que pasan `validar_trace`. La prueba `RealSecondDeliveryTracesLoadAndPlayToTheEnd` comprueba que Unity carga y reproduce cada uno hasta el final.
+
+## `mejoras/`: mejora M1, despacho aprendido (26 de noviembre de 2026)
+
+Escenarios D y G con `anticipada`, `qlearning` y `sarsa`, seed 0. Los de `qlearning` y `sarsa` traen el evento `DECISION_DESPACHO` (estado, valores Q, acción y origen de cada decisión) y `config.aprendizaje` con la tabla que decidió (ruta y sha256). Especificación: `harvest_sim/docs/especificacion_mejoras.md` §M1.
+
+Para regenerarlos desde la raíz de harvest_sim (las tablas están en `config/aprendizaje/`):
+
+```bash
+python tools/exportar_traces_unity.py ../harvest-simu-visualization/Assets/Data/Traces/mejoras \
+  --escenarios escenario_d escenario_g --estrategias anticipada qlearning sarsa --seed 0
+```

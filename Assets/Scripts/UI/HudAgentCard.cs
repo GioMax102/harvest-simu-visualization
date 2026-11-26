@@ -29,12 +29,14 @@ namespace HarvestSim.Visualization
             }
         }
 
-        public void Render(AgentState value, int capacity, float tank, string alert, bool followed)
+        public void Render(AgentState value, int capacity, float tank, string alert, bool followed, string decision = null)
         {
             if (state)
             {
                 string text = AgentView.StatusText(value.Status);
                 if (alert != null) text += $"  <color={HudFormat.Bad}>{alert.Replace("\n", " · ")}</color>";
+                // M1: la última decisión del despacho aprendido (estado, valores Q y acción)
+                if (decision != null) text += $"\n<size=85%>{decision}</size>";
                 state.text = text;
             }
             float load = capacity > 0 ? Mathf.Clamp01(value.Load / (float)capacity) : 0;

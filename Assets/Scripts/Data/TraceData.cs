@@ -39,6 +39,8 @@ namespace HarvestSim.Visualization
         public readonly HashSet<(int x, int y)> Harvested = new();
         public readonly Dictionary<int, JObject> Messages = new();
         public readonly Dictionary<string, string> Winners = new();
+        /// <summary>M1: la última DECISION_DESPACHO de cada cosechadora (se mantiene entre ticks).</summary>
+        public readonly Dictionary<string, JObject> Decisions = new();
         public JArray Events = new();
     }
 }

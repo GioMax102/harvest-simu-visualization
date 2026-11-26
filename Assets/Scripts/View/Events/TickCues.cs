@@ -21,6 +21,8 @@ namespace HarvestSim.Visualization
         /// <summary>Celda → agente que la cosechó en este tick.</summary>
         public readonly Dictionary<(int x, int y), string> HarvestedBy = new();
         public readonly HashSet<string> Deposits = new();
+        /// <summary>M1: la DECISION_DESPACHO de este tick, por cosechadora (para la placa).</summary>
+        public readonly Dictionary<string, JObject> Decisions = new();
 
         public static TickCues From(JArray events)
         {
@@ -40,6 +42,8 @@ namespace HarvestSim.Visualization
                         cues.AddAlert(agent, "BLOQUEO"); cues.Blocked.Add(agent); break;
                     case "DEPOSITO":
                         if (agent != null) cues.Deposits.Add(agent); break;
+                    case "DECISION_DESPACHO":
+                        if (agent != null) cues.Decisions[agent] = e; break;
                     case "CELDA_COSECHADA":
                         if (e["celda"] is JArray cell && cell.Count == 2) cues.HarvestedBy[((int)cell[0], (int)cell[1])] = agent;
                         break;

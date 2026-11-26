@@ -43,6 +43,7 @@ namespace HarvestSim.Visualization
                     if ((string)e["tipo_mensaje"] == "TRANSFERENCIA_TERMINADA") State.Winners.Remove((string)e["de"]);
                     break;
                 case "MENSAJE_ENTREGADO": State.Messages.Remove((int)e["id"]); break;
+                case "DECISION_DESPACHO": State.Decisions[(string)e["agente"]] = e; break;
             }
         }
     }

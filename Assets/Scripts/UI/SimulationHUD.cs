@@ -127,6 +127,16 @@ namespace HarvestSim.Visualization
             Listen(refreshScenariosButton, client.RefreshScenarios);
         }
 
+        /// <summary>Opciones del selector de estrategia (las que el servidor puede correr en el escenario elegido).</summary>
+        public void SetStrategies(List<string> names)
+        {
+            if (!strategyDropdown || names == null || names.Count == 0) return;
+            string current = strategyDropdown.options.Count > 0 ? strategyDropdown.options[strategyDropdown.value].text : null;
+            strategyDropdown.ClearOptions(); strategyDropdown.AddOptions(names);
+            int index = current == null ? -1 : names.IndexOf(current);
+            strategyDropdown.SetValueWithoutNotify(index >= 0 ? index : 0);
+        }
+
         public void SetScenarios(List<string> names)
         {
             if (!scenarioDropdown) return;
@@ -198,7 +208,9 @@ namespace HarvestSim.Visualization
             {
                 if (!trace.Agents.TryGetValue(card.AgentId, out var agent) || !state.Agents.TryGetValue(card.AgentId, out var value)) continue;
                 bool isFollowed = followed && world.Agents.TryGetValue(card.AgentId, out var view) && view.transform == followed;
-                card.Render(value, agent.Capacity, Tank(trace, agent.Type), cues.AlertText(card.AgentId), isFollowed);
+                state.Decisions.TryGetValue(card.AgentId, out var decision);
+                card.Render(value, agent.Capacity, Tank(trace, agent.Type), cues.AlertText(card.AgentId), isFollowed,
+                    HudFormat.DecisionText(decision));
             }
             if (agentsText) agentsText.text = "";
 
