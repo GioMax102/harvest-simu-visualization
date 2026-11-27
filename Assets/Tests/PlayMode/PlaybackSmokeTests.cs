@@ -244,7 +244,7 @@ namespace HarvestSim.Tests
                     deadline = Time.realtimeSinceStartup + 12;
                     while (!controller.hud.simulateButton.interactable && Time.realtimeSinceStartup < deadline) yield return null;
                     Assert.That(controller.hud.simulateButton.interactable, Is.True);
-                    Assert.That(controller.hud.errorText.text, Does.Contain("solo se admite 2.1 o 2.2"));
+                    Assert.That(controller.hud.errorText.text, Does.Contain("solo se admite 2.1, 2.2, 2.3 o 2.4"));
                     if (i == 0)
                     {
                         Assert.That(controller.Playback, Is.Not.Null);

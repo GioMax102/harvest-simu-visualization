@@ -21,6 +21,10 @@ namespace HarvestSim.Visualization
         public GroundBuilder Ground { get; private set; }
         public SceneryBuilder Scenery { get; private set; }
         public TerrainShapes Shapes { get; private set; }
+        /// <summary>Forma real de los lotes recortada por celda (orillas del suelo y del maíz).</summary>
+        public LotShapes Lots { get; private set; }
+        /// <summary>Trayectorias suaves por los caminos (sin la escalera de la cuadrícula).</summary>
+        public RoadRoutes Routes { get; private set; }
         public CoordinationArcs Arcs { get; private set; }
         public CameraRig Rig { get; private set; }
         public IReadOnlyDictionary<string, AgentView> Agents => agents;
@@ -41,12 +45,14 @@ namespace HarvestSim.Visualization
             Clear(); trace = data;
             Grid = FieldGrid.FromTrace(data, data.World["tamano_celda_m"] == null ? art.cellSize : null);
 
+            Lots = LotShapes.From(Grid, data);
+            Routes = RoadRoutes.Build(Grid, data);
             Ground = new GroundBuilder();
-            Ground.Build(Grid, art, cellsRoot);
+            Ground.Build(Grid, art, cellsRoot, Lots);
             var cornObject = new GameObject("Maiz");
             cornObject.transform.SetParent(cellsRoot, false);
             Corn = cornObject.AddComponent<CornField>();
-            Corn.Build(Grid, data, art.cornMaterial, art.canopyMaterial);
+            Corn.Build(Grid, data, art.cornMaterial, art.canopyMaterial, Lots);
 
             Scenery = new SceneryBuilder();
             Scenery.Build(Grid, art, structuresRoot);
@@ -86,7 +92,9 @@ namespace HarvestSim.Visualization
                 var value = state.Agents[pair.Key];
                 Cues.Proposals.TryGetValue(pair.Key, out string proposal);
                 Cues.Decisions.TryGetValue(pair.Key, out var decision);
-                var pose = VehicleMotion.OnTrajectory(Grid, state, pair.Key, 0) ?? VehicleMotion.At(Grid, value);
+                // 2.4: vuelta de cabecera sobre la curva de Dubins; por camino, el tramo suave; si no, la celda del trace.
+                var pose = VehicleMotion.OnTrajectory(Grid, state, pair.Key, 0)
+                           ?? (Routes.TryPose(pair.Key, state.Tick, 0, out var smooth) ? smooth : VehicleMotion.At(Grid, value));
                 pair.Value.Render(value, pose, Cues.AlertText(pair.Key), proposal, HudFormat.DecisionCue(decision));
             }
             Arcs.Render(Cues, state, agents);
@@ -98,11 +106,15 @@ namespace HarvestSim.Visualization
             if (trace == null) return;
             fraction = Mathf.Clamp01(fraction);
             var poses = new Dictionary<string, VehiclePose>();
+            bool advancing = next.Tick == current.Tick + 1;
             foreach (var pair in agents)
             {
-                // 2.4: en una vuelta de cabecera sigue la curva de Dubins del trace; si no, el movimiento entre celdas
+                // 2.4: en una vuelta de cabecera sigue la curva de Dubins del trace; por camino, la trayectoria suave del
+                // tramo; en el cultivo (y al entrar a él), recto celda a celda.
                 var pose = VehicleMotion.OnTrajectory(Grid, current, pair.Key, fraction)
-                           ?? VehicleMotion.Sample(Grid, current.Agents[pair.Key], next.Agents[pair.Key], fraction);
+                           ?? (advancing && Routes.TryPose(pair.Key, current.Tick, fraction, out var smooth)
+                               ? smooth
+                               : VehicleMotion.Sample(Grid, current.Agents[pair.Key], next.Agents[pair.Key], fraction));
                 pair.Value.SetPose(pose);
                 poses[pair.Key] = pose;
             }
@@ -208,7 +220,7 @@ namespace HarvestSim.Visualization
                 }
             }
             Ground?.Destroy(); Scenery?.Destroy(); Shapes?.Destroy(); Arcs?.Clear();
-            Ground = null; Scenery = null; Shapes = null; Arcs = null; Corn = null; Grid = null;
+            Ground = null; Scenery = null; Shapes = null; Arcs = null; Corn = null; Grid = null; Lots = null; Routes = null;
             agents.Clear(); trace = null; nextCues = null; nextCuesTick = -1; Cues = new TickCues();
         }
 

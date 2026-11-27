@@ -8,6 +8,8 @@ namespace HarvestSim.Visualization
     /// Suelo del mundo: una planicie de pasto alrededor y una malla de parcelas con submallas por material
     /// (tierra bajo el maíz, rastrojo cosechado, camino de servicio y concreto). Las UV están en metros;
     /// el tamaño de cada textura se ajusta con la escala del material.
+    /// Con la forma real de los lotes (<see cref="LotShapes"/>), las celdas de la orilla se dibujan recortadas al
+    /// contorno y con los pedazos de lote que les prestan sus vecinas, en lugar del cuadro completo.
     /// </summary>
     public sealed class GroundBuilder
     {
@@ -17,12 +19,12 @@ namespace HarvestSim.Visualization
         public MeshRenderer Terrain { get; private set; }
         public MeshRenderer Parcels { get; private set; }
         public int StubbleCellCount { get; private set; }
-        readonly Dictionary<Vector2Int, int> quadStart = new();
+        readonly Dictionary<Vector2Int, int[]> cellTriangles = new();
         readonly List<int>[] indices = { new(), new(), new(), new() };
         FieldGrid grid;
         Mesh parcelsMesh, terrainMesh;
 
-        public void Build(FieldGrid layout, HarvestArt art, Transform parent)
+        public void Build(FieldGrid layout, HarvestArt art, Transform parent, LotShapes lots = null)
         {
             grid = layout;
             float size = grid.CellSize;
@@ -51,9 +53,19 @@ namespace HarvestSim.Visualization
                     if (kind is CellKind.Obstacle or CellKind.OutsideField) continue;
                     // Con mapa, los caminos se dibujan con su forma real (TerrainShapes), no como cuadros de 12 m.
                     if (grid.HasMap && kind == CellKind.Service) continue;
+                    var coord = new Vector2Int(x, y);
+                    var pieces = kind == CellKind.Field ? lots?.PiecesOf(coord) : null;
+                    if (pieces != null)
+                    {
+                        var tris = new List<int>();
+                        foreach (var piece in pieces) LotShapes.AddPiece(parcels, piece, p => Draped(p.x, p.y), p => p, tris);
+                        cellTriangles[coord] = tris.ToArray();
+                        continue;
+                    }
                     var c = grid.CellToWorld(x, y, TileHeight);
                     float h = size / 2;
-                    quadStart[new Vector2Int(x, y)] = parcels.VertexCount;
+                    int v = parcels.VertexCount;
+                    cellTriangles[coord] = new[] { v, v + 1, v + 2, v, v + 2, v + 3 };
                     parcels.AddQuad(Draped(c.x - h, c.z - h), Draped(c.x - h, c.z + h), Draped(c.x + h, c.z + h), Draped(c.x + h, c.z - h),
                         Vector3.up, new Vector2(c.x - h, c.z - h), new Vector2(c.x + h, c.z + h));
                 }
@@ -112,7 +124,7 @@ namespace HarvestSim.Visualization
             if (!parcelsMesh) return;
             foreach (var list in indices) list.Clear();
             int stubble = 0;
-            foreach (var pair in quadStart)
+            foreach (var pair in cellTriangles)
             {
                 var cell = pair.Key;
                 int submesh = grid.KindAt(cell.x, cell.y) switch
@@ -122,8 +134,7 @@ namespace HarvestSim.Visualization
                     _ => harvested.Contains((cell.x, cell.y)) ? StubbleSubmesh : SoilSubmesh
                 };
                 if (submesh == StubbleSubmesh) stubble++;
-                int v = pair.Value;
-                indices[submesh].AddRange(new[] { v, v + 1, v + 2, v, v + 2, v + 3 });
+                indices[submesh].AddRange(pair.Value);
             }
             for (int i = 0; i < indices.Length; i++) parcelsMesh.SetTriangles(indices[i], i, false);
             parcelsMesh.RecalculateBounds();
@@ -133,7 +144,7 @@ namespace HarvestSim.Visualization
         public void Destroy()
         {
             DestroyObject(parcelsMesh); DestroyObject(terrainMesh);
-            parcelsMesh = terrainMesh = null; quadStart.Clear();
+            parcelsMesh = terrainMesh = null; cellTriangles.Clear();
         }
 
         static void DestroyObject(Object target)
