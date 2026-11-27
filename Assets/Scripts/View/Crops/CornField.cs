@@ -13,7 +13,7 @@ namespace HarvestSim.Visualization
     [ExecuteAlways]
     public sealed class CornField : MonoBehaviour
     {
-        public const float RowSpacing = 1.2f;
+        public const float RowSpacing = .76f; // maíz a 76 cm (30 in): 15 hileras por celda de 12 m
         /// <summary>Altura del dosel lejano: debajo de las hojas altas para que asomen las plantas.</summary>
         public const float CanopyHeight = 1.35f;
         [Tooltip("Distancia (m) hasta la que se dibujan las plantas detalladas.")]

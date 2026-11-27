@@ -17,6 +17,11 @@ namespace HarvestSim.Visualization
             while (State.Tick < tick)
             {
                 State.Tick++;
+                foreach (var key in new System.Collections.Generic.List<string>(State.Trajectories.Keys))
+                {
+                    var (start, path) = State.Trajectories[key];
+                    if (State.Tick > start + (int)path["ticks"]) State.Trajectories.Remove(key);
+                }
                 State.Events = trace.Changes.TryGetValue(State.Tick, out var changes) ? changes : new JArray();
                 foreach (JObject e in State.Events) ApplyEvent(e);
             }
@@ -44,6 +49,7 @@ namespace HarvestSim.Visualization
                     break;
                 case "MENSAJE_ENTREGADO": State.Messages.Remove((int)e["id"]); break;
                 case "DECISION_DESPACHO": State.Decisions[(string)e["agente"]] = e; break;
+                case "TRAYECTORIA": State.Trajectories[(string)e["agente"]] = (State.Tick, e); break;
             }
         }
     }

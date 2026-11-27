@@ -78,8 +78,9 @@ namespace HarvestSim.Visualization
         {
             var root = trace.Json;
             string version = Text(root, "schema_version");
-            Require(version == "2.1" || version == "2.2" || version == "2.3", "schema_version", "solo se admite 2.1, 2.2 o 2.3");
-            bool desde22 = version != "2.1"; // 2.3 solo agrega campos a 2.2
+            Require(version is "2.1" or "2.2" or "2.3" or "2.4", "schema_version", "solo se admite 2.1, 2.2, 2.3 o 2.4");
+            bool desde22 = version != "2.1"; // 2.3 y 2.4 solo agregan campos a 2.2
+            bool desde24 = version == "2.4"; // hileras: cabecera, pasadas y trayectorias de vuelta
             var meta = Field(root, "meta", JTokenType.Object);
             Text(meta, "escenario");
             int total = Integer(meta, "total_ticks");
@@ -94,7 +95,18 @@ namespace HarvestSim.Visualization
             // 2.3 con mapa real (caminos, fuera de campo y lotes): la fila 0 ya no es de servicio y el campo es todo
             // menos obstáculos, caminos, fuera de campo, bodega y bases (docs/especificacion_terreno.md de harvest_sim).
             bool map = world["caminos"] != null || world["fuera_de_campo"] != null || world["lotes"] != null;
-            Require(!map || version == "2.3", "mundo", "el mapa (caminos, fuera_de_campo, lotes) requiere trace 2.3");
+            Require(!map || version is "2.3" or "2.4", "mundo", "el mapa (caminos, fuera_de_campo, lotes) requiere trace 2.3");
+            bool rowsData = world["cabecera"] != null || world["pasadas"] != null;
+            Require(!rowsData || desde24, "mundo", "cabecera y pasadas requieren trace 2.4");
+            if (rowsData)
+            {
+                foreach (var cell in (JArray)Field(world, "cabecera", JTokenType.Array)) Cell(cell, width, height);
+                foreach (var pass in (JArray)Field(world, "pasadas", JTokenType.Array))
+                {
+                    Require(pass is JArray p && p.Count == 3 && (int)p[0] <= (int)p[2], pass.Path, "pasada [x0, y, x1] con x0 <= x1");
+                    Cell(new JArray(pass[0], pass[1]), width, height); Cell(new JArray(pass[2], pass[1]), width, height);
+                }
+            }
             var obstacles = new HashSet<(int, int)>();
             foreach (var token in (JArray)Field(world, "obstaculos", JTokenType.Array))
             {
@@ -210,6 +222,14 @@ namespace HarvestSim.Visualization
                         case "RESTRICCION":
                             Require(desde22, e.Path, "RESTRICCION requiere trace 2.2");
                             Agent(e, "agente", agents); Text(e, "regla"); Text(e, "detalle"); break;
+                        case "TRAYECTORIA":
+                            // 2.4: la curva (Dubins) de una vuelta de cabecera, en metros del marco de la cuadrícula
+                            Require(desde24, e.Path, "TRAYECTORIA requiere trace 2.4");
+                            Agent(e, "agente", agents); Text(e, "tramo"); Integer(e, "ticks", 1);
+                            var points = (JArray)Field(e, "puntos", JTokenType.Array);
+                            Require(points.Count >= 2 && points.All(p => p is JArray q && q.Count == 3 &&
+                                    q.All(v => v.Type is JTokenType.Float or JTokenType.Integer)), points.Path, "puntos [x, y, rumbo] (al menos 2)");
+                            break;
                         case "DECISION_DESPACHO":
                             // M1: una decisión del despacho aprendido (harvest_sim, docs/especificacion_mejoras.md §M1).
                             Require(desde22, e.Path, "DECISION_DESPACHO requiere trace 2.2");

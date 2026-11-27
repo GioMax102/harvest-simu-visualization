@@ -181,6 +181,10 @@ namespace HarvestSim.Visualization
             $"Arco {Color("azul", Info)}: solicitud de servicio (cfp)\n" +
             $"Arco {Color("naranja", Warn)}: carro ganador hasta terminar la transferencia\n" +
             "Oferta en la placa: costo de la propuesta\n\n" +
+            "<b>Hileras (trace 2.4)</b>\n" +
+            "Franja de tierra: orilla de la cabecera, donde terminan las pasadas\n" +
+            "La cabecera se cosecha primero; las vueltas siguen la curva de Dubins\n" +
+            $"{Color("R14_hileras", Bad)}: entró a la pasada de frente, no de lado\n\n" +
             "<b>Despacho aprendido (qlearning, sarsa)</b>\n" +
             $"Placa {Color("lila", "#c9b6ff")}: la cosechadora pide carro (Q, umbral o tolva llena)\n" +
             "Tarjeta: última decisión con su tolva, carros libres y valores Q\n\n" +

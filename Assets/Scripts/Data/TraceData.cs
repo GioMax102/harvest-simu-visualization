@@ -41,6 +41,9 @@ namespace HarvestSim.Visualization
         public readonly Dictionary<string, string> Winners = new();
         /// <summary>M1: la última DECISION_DESPACHO de cada cosechadora (se mantiene entre ticks).</summary>
         public readonly Dictionary<string, JObject> Decisions = new();
+        /// <summary>2.4: la vuelta de cabecera en curso de cada cosechadora: (tick en que empezó, evento TRAYECTORIA).
+        /// Se quita cuando pasan sus ticks.</summary>
+        public readonly Dictionary<string, (int start, JObject path)> Trajectories = new();
         public JArray Events = new();
     }
 }

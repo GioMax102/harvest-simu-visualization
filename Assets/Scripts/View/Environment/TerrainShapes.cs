@@ -22,11 +22,15 @@ namespace HarvestSim.Visualization
         public const float RoadWidth = 4f, RoadLift = .08f, OutlineLift = .25f, Step = 2f;
 
         public int RoadCount { get; private set; }
+        /// <summary>2.4: tramos de la orilla de la cabecera (uno en cada punta de cada pasada).</summary>
+        public int HeadlandEdgeCount { get; private set; }
+        public const float HeadlandEdgeWidth = .5f;
         public int LotCount { get; private set; }
         readonly List<Object> created = new();
 
         public void Build(FieldGrid grid, TraceData trace, HarvestArt art, Transform parent)
         {
+            BuildHeadlandEdges(grid, trace, art, parent);
             var formas = trace.World["geo"]?["formas"] as JObject;
             if (formas == null) return;
             if (formas["caminos"] is JArray caminos)
@@ -68,6 +72,35 @@ namespace HarvestSim.Visualization
                         line.SetPosition(i, new Vector3(puntos[i].x, grid.GroundHeight(puntos[i].x, puntos[i].y) + OutlineLift, puntos[i].y));
                     LotCount++;
                 }
+        }
+
+        /// <summary>
+        /// 2.4 (hileras): la orilla de la cabecera, donde terminan las pasadas y se dan las vueltas. Es una franja de
+        /// tierra apisonada en cada punta de cada pasada [x0, y, x1], perpendicular a las hileras y sobre el relieve.
+        /// </summary>
+        void BuildHeadlandEdges(FieldGrid grid, TraceData trace, HarvestArt art, Transform parent)
+        {
+            if (trace.World["pasadas"] is not JArray passes || passes.Count == 0) return;
+            float s = grid.CellSize;
+            var builder = new MeshBuilder();
+            foreach (var pass in passes)
+            {
+                int x0 = (int)pass[0], y = (int)pass[1], x1 = (int)pass[2];
+                foreach (float edge in new[] { (x0 - .5f) * s, (x1 + .5f) * s })
+                {
+                    var line = Densify(new List<Vector2> { new(edge, -(y - .5f) * s), new(edge, -(y + .5f) * s) }, Step);
+                    Ribbon(builder, grid, line, HeadlandEdgeWidth);
+                    HeadlandEdgeCount++;
+                }
+            }
+            var mesh = builder.ToMesh("Cabecera");
+            created.Add(mesh);
+            var go = new GameObject("Orilla de la cabecera");
+            go.transform.SetParent(parent, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = art.roadMaterial;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
         }
 
         /// <summary>(u, v) del marco de la cuadrícula → (X, Z) de Unity.</summary>

@@ -92,7 +92,7 @@ namespace HarvestSim.Visualization
             try
             {
                 var health = JObject.Parse(body);
-                serverHealthy = (string)health["estado"] == "ok" && (string)health["schema_version"] is "2.2" or "2.3";
+                serverHealthy = (string)health["estado"] == "ok" && (string)health["schema_version"] is "2.2" or "2.3" or "2.4";
                 if (!serverHealthy) LoadLocalAfterError("El servidor no ofrece el contrato trace 2.2");
             }
             catch (Exception error)
