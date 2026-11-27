@@ -21,6 +21,51 @@ namespace HarvestSim.Visualization
         /// <summary>Largo relativo de las tangentes de Hermite en un giro de 90°.</summary>
         public const float TurnTangent = .9f;
 
+        /// <summary>
+        /// 2.4: pose sobre la curva de una vuelta de cabecera (evento TRAYECTORIA, decidida por Python con Dubins),
+        /// en la fracción <paramref name="u"/> (0..1) de su largo. Entre los puntos muestreados usa una spline de
+        /// Catmull-Rom (curva paramétrica que pasa por todos los puntos); el rumbo es el de la curva de Dubins, que viene
+        /// en cada punto del trace.
+        /// Los puntos vienen en metros del marco de la cuadrícula: (x, y) → (x, h, −y) en Unity.
+        /// </summary>
+        public static VehiclePose AlongTrajectory(FieldGrid grid, Newtonsoft.Json.Linq.JArray points, float u)
+        {
+            int n = points.Count;
+            var p = new Vector2[n];
+            for (int i = 0; i < n; i++) p[i] = new Vector2((float)points[i][0], -(float)points[i][1]);
+            var lengths = new float[n];
+            for (int i = 1; i < n; i++) lengths[i] = lengths[i - 1] + Vector2.Distance(p[i - 1], p[i]);
+            float target = Mathf.Clamp01(u) * lengths[n - 1];
+            int k = 1;
+            while (k < n - 1 && lengths[k] < target) k++;
+            float span = Mathf.Max(1e-6f, lengths[k] - lengths[k - 1]);
+            float t = Mathf.Clamp01((target - lengths[k - 1]) / span);
+            Vector2 p0 = p[Mathf.Max(0, k - 2)], p1 = p[k - 1], p2 = p[k], p3 = p[Mathf.Min(n - 1, k + 1)];
+            Vector2 point = CatmullRom(p0, p1, p2, p3, t);
+            // el rumbo exacto de la curva viene en el trace (radianes, 0 = +x de la cuadrícula); en Unity la
+            // dirección (cos θ, −sin θ) en (x, z) da el ángulo atan2(x, z)
+            float heading = Mathf.LerpAngle(Yaw((float)points[k - 1][2]), Yaw((float)points[k][2]), t);
+            return new VehiclePose { Position = new Vector3(point.x, grid.GroundHeight(point.x, point.y), point.y), Heading = heading };
+        }
+
+        static float Yaw(float theta) => Mathf.Atan2(Mathf.Cos(theta), -Mathf.Sin(theta)) * Mathf.Rad2Deg;
+
+        static Vector2 CatmullRom(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
+        {
+            float t2 = t * t, t3 = t2 * t;
+            return .5f * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (3 * p1 - p0 - 3 * p2 + p3) * t3);
+        }
+
+        /// <summary>Si la máquina está dando una vuelta de cabecera (2.4), su pose sobre la curva; si no, null.</summary>
+        public static VehiclePose? OnTrajectory(FieldGrid grid, PlaybackState state, string agent, float fraction)
+        {
+            if (!state.Trajectories.TryGetValue(agent, out var active)) return null;
+            int ticks = (int)active.path["ticks"];
+            float u = (state.Tick - active.start + fraction) / ticks;
+            if (u < 0 || u > 1) return null;
+            return AlongTrajectory(grid, (Newtonsoft.Json.Linq.JArray)active.path["puntos"], u);
+        }
+
         public static VehiclePose At(FieldGrid grid, AgentState state) => new()
         {
             Position = grid.CellToWorld(state.X, state.Y), Heading = FieldGrid.Heading(state.Orientation)

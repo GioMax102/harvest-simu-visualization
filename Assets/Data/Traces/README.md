@@ -59,3 +59,16 @@ Para regenerarlos desde la raíz de harvest_sim (las tablas están en `config/ap
 python tools/exportar_traces_unity.py ../harvest-simu-visualization/Assets/Data/Traces/mejoras \
   --escenarios escenario_d escenario_g --estrategias anticipada qlearning sarsa --seed 0
 ```
+
+## `hileras/`: plan de hileras y rutas, trace 2.4 (26 de noviembre de 2026)
+
+`escenario_g_hileras` es G con `politica.movimiento = "hileras"`. Trae:
+- `mundo.cabecera` y `mundo.pasadas`;
+- el evento `TRAYECTORIA`, la curva de Dubins de cada vuelta de cabecera, que Unity recorre con una spline de Catmull-Rom.
+
+Especificación: `harvest_sim/docs/especificacion_terreno.md` §14. Para regenerar:
+
+```bash
+python tools/exportar_traces_unity.py ../harvest-simu-visualization/Assets/Data/Traces/hileras \
+  --escenarios escenario_g_hileras --estrategias base anticipada_plus --seed 0
+```

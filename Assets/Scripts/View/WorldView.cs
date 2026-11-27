@@ -86,7 +86,8 @@ namespace HarvestSim.Visualization
                 var value = state.Agents[pair.Key];
                 Cues.Proposals.TryGetValue(pair.Key, out string proposal);
                 Cues.Decisions.TryGetValue(pair.Key, out var decision);
-                pair.Value.Render(value, VehicleMotion.At(Grid, value), Cues.AlertText(pair.Key), proposal, HudFormat.DecisionCue(decision));
+                var pose = VehicleMotion.OnTrajectory(Grid, state, pair.Key, 0) ?? VehicleMotion.At(Grid, value);
+                pair.Value.Render(value, pose, Cues.AlertText(pair.Key), proposal, HudFormat.DecisionCue(decision));
             }
             Arcs.Render(Cues, state, agents);
         }
@@ -99,7 +100,9 @@ namespace HarvestSim.Visualization
             var poses = new Dictionary<string, VehiclePose>();
             foreach (var pair in agents)
             {
-                var pose = VehicleMotion.Sample(Grid, current.Agents[pair.Key], next.Agents[pair.Key], fraction);
+                // 2.4: en una vuelta de cabecera sigue la curva de Dubins del trace; si no, el movimiento entre celdas
+                var pose = VehicleMotion.OnTrajectory(Grid, current, pair.Key, fraction)
+                           ?? VehicleMotion.Sample(Grid, current.Agents[pair.Key], next.Agents[pair.Key], fraction);
                 pair.Value.SetPose(pose);
                 poses[pair.Key] = pose;
             }
