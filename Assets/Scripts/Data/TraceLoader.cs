@@ -201,7 +201,8 @@ namespace HarvestSim.Visualization
                             {
                                 string status = Text(set, "estado");
                                 string[] valid = agentTypes[id] == "carro"
-                                    ? new[] { "EN_BASE", "YENDO_A_COSECHADORA", "ESPERANDO_TRANSFERENCIA", "YENDO_A_BODEGA", "DESCARGANDO", "REGRESANDO_A_BASE" }
+                                    ? new[] { "EN_BASE", "YENDO_A_COSECHADORA", "ESPERANDO_TRANSFERENCIA", "YENDO_A_BODEGA", "DESCARGANDO", "REGRESANDO_A_BASE",
+                                              "RECIBIENDO_EN_MARCHA" /* H6: al lado de la cosechadora, sin detenerse */ }
                                     : new[] { "EN_BASE", "YENDO_A_CAMPO", "COSECHANDO", "LLENA_ESPERANDO", "TRANSFIRIENDO", "REGRESANDO_A_BASE", "FIN" };
                                 Require(valid.Contains(status), set.Path, "estado desconocido");
                             }

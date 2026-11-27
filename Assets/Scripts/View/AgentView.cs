@@ -127,6 +127,7 @@ namespace HarvestSim.Visualization
             "ESPERANDO_TRANSFERENCIA" => "Esperando transferencia",
             "YENDO_A_BODEGA" => "Yendo a bodega",
             "DESCARGANDO" => "Descargando",
+            "RECIBIENDO_EN_MARCHA" => "Recibiendo en marcha",
             _ => status ?? ""
         };
 

@@ -184,7 +184,8 @@ namespace HarvestSim.Visualization
             "<b>Hileras (trace 2.4)</b>\n" +
             "Franja de tierra: orilla de la cabecera, donde terminan las pasadas\n" +
             "La cabecera se cosecha primero; las vueltas siguen la curva de Dubins\n" +
-            $"{Color("R14_hileras", Bad)}: entró a la pasada de frente, no de lado\n\n" +
+            $"{Color("R14_hileras", Bad)}: entró a la pasada de frente, no de lado\n" +
+            "Recibiendo en marcha: el carro va al lado y recibe sin que ella se detenga\n\n" +
             "<b>Despacho aprendido (qlearning, sarsa)</b>\n" +
             $"Placa {Color("lila", "#c9b6ff")}: la cosechadora pide carro (Q, umbral o tolva llena)\n" +
             "Tarjeta: última decisión con su tolva, carros libres y valores Q\n\n" +
